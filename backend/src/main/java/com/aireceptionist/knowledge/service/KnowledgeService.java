@@ -132,9 +132,9 @@ public class KnowledgeService {
         KnowledgeBase kb = target == null ? new KnowledgeBase() : target;
 
         kb.setTenantId(request.getTenantId());
-        kb.setIndustry(request.getIndustry() == null ? IndustryType.CLINIC : request.getIndustry());
+        kb.setIndustry(request.getIndustry());
         kb.setCategory(request.getCategory());
-        kb.setIntent(request.getIntent() == null ? KnowledgeIntent.SERVICES : request.getIntent());
+        kb.setIntent(request.getIntent());
         kb.setQuestion(request.getQuestion());
         kb.setAnswer(request.getAnswer());
         kb.setLanguage(normalizeLanguage(request.getLanguage()));
