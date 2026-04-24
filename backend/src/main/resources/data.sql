@@ -1,3 +1,48 @@
+-- Backfill legacy rows so schema changes remain startup-safe on existing databases.
+UPDATE knowledge_base
+SET language = 'English'
+WHERE language IS NULL;
+
+UPDATE knowledge_base kb
+SET industry = CASE
+    WHEN t.industry IS NULL OR trim(t.industry) = '' THEN 'CLINIC'
+    WHEN upper(replace(replace(t.industry, ' ', '_'), '-', '_')) IN ('CLINIC', 'HOTEL', 'SALON', 'MOBILE_SHOP')
+        THEN upper(replace(replace(t.industry, ' ', '_'), '-', '_'))
+    WHEN upper(t.industry) IN ('HEALTHCARE', 'HOSPITAL', 'DENTAL') THEN 'CLINIC'
+    ELSE 'CLINIC'
+END
+FROM tenants t
+WHERE kb.tenant_id = t.id
+  AND kb.industry IS NULL;
+
+UPDATE knowledge_base
+SET industry = 'CLINIC'
+WHERE industry IS NULL;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'knowledge_base'
+          AND column_name = 'type'
+    ) THEN
+        EXECUTE $SQL$
+            UPDATE knowledge_base
+            SET intent = CASE
+                WHEN upper(type) = 'POLICY' THEN 'CANCELLATION'
+                WHEN upper(type) = 'SERVICE' THEN 'SERVICES'
+                ELSE 'HOURS'
+            END
+            WHERE intent IS NULL
+        $SQL$;
+    END IF;
+END $$;
+
+UPDATE knowledge_base
+SET intent = 'SERVICES'
+WHERE intent IS NULL;
+
 -- Seed a demo tenant
 INSERT INTO tenants (name, industry, phone, email, address, working_hours, default_language, supported_languages, created_at, updated_at)
 SELECT 'Demo Clinic', 'CLINIC', '+1-555-0100', 'contact@democlinic.com',

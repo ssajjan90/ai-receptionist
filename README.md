@@ -66,6 +66,20 @@ docker compose up --build
 
 > When `OPENAI_API_KEY` is left as the placeholder the system returns clearly-labelled mock responses so all endpoints remain functional without a paid key.
 
+### Existing DB Upgrade Note (Knowledge Base refactor)
+
+If you upgraded from an older build and see startup errors like:
+`ERROR: column "language" of relation "knowledge_base" contains null values`,
+it means legacy `knowledge_base` rows still have nulls in new KB columns.
+
+This project now includes startup backfill SQL in `data.sql` to auto-populate missing `language`, `industry`, and `intent` values before default seeds are inserted. If your DB is still inconsistent, run:
+
+```sql
+UPDATE knowledge_base SET language = 'English' WHERE language IS NULL;
+UPDATE knowledge_base SET industry = 'CLINIC' WHERE industry IS NULL;
+UPDATE knowledge_base SET intent = 'SERVICES' WHERE intent IS NULL;
+```
+
 ---
 
 ## API Reference
