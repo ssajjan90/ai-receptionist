@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_receptionist_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_receptionist
+      POSTGRES_USER: aireceptionist
+      POSTGRES_PASSWORD: aireceptionist_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aireceptionist -d ai_receptionist"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai_receptionist_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ai_receptionist
+      SPRING_DATASOURCE_USERNAME: aireceptionist
+      SPRING_DATASOURCE_PASSWORD: aireceptionist_pass
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-placeholder-key}
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
