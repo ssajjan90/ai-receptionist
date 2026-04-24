@@ -59,3 +59,13 @@ app:
     secret: ${JWT_SECRET:change-this-to-a-long-random-32-byte-secret-key-at-least}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
+
+
+ai:
+  provider: ${AI_PROVIDER:rule-based}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    max-tokens: ${OPENAI_MAX_TOKENS:300}
+    temperature: ${OPENAI_TEMPERATURE:0.3}
