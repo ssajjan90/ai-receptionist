@@ -2,6 +2,7 @@ package com.aireceptionist.webhook.whatsapp;
 
 import com.aireceptionist.channel.CommunicationChannel;
 import com.aireceptionist.channel.dto.InboundMessageRequest;
+import com.aireceptionist.channel.service.TenantChannelConfigService;
 import com.aireceptionist.channel.dto.OutboundMessageResponse;
 import com.aireceptionist.receptionist.AIReceptionistService;
 import com.aireceptionist.webhook.whatsapp.dto.WhatsAppWebhookRequest;
@@ -26,16 +27,19 @@ public class WhatsAppWebhookController {
 
     private final String verifyToken;
     private final AIReceptionistService aiReceptionistService;
+    private final TenantChannelConfigService tenantChannelConfigService;
     private final Long defaultTenantId;
 
     public WhatsAppWebhookController(
             @Value("${whatsapp.verify-token}") String verifyToken,
             @Value("${whatsapp.default-tenant-id:1}") Long defaultTenantId,
-            AIReceptionistService aiReceptionistService
+            AIReceptionistService aiReceptionistService,
+            TenantChannelConfigService tenantChannelConfigService
     ) {
         this.verifyToken = verifyToken;
         this.defaultTenantId = defaultTenantId;
         this.aiReceptionistService = aiReceptionistService;
+        this.tenantChannelConfigService = tenantChannelConfigService;
     }
 
     @GetMapping(produces = MediaType.TEXT_PLAIN_VALUE)
@@ -64,8 +68,13 @@ public class WhatsAppWebhookController {
             return ResponseEntity.ok().build();
         }
 
+        Long resolvedTenantId = tenantChannelConfigService
+                .findByChannelAndExternalPhoneNumberId(CommunicationChannel.WHATSAPP, payload.phoneNumberId())
+                .map(config -> config.getTenantId())
+                .orElse(defaultTenantId);
+
         InboundMessageRequest inboundMessageRequest = new InboundMessageRequest();
-        inboundMessageRequest.setTenantId(defaultTenantId);
+        inboundMessageRequest.setTenantId(resolvedTenantId);
         inboundMessageRequest.setChannel(CommunicationChannel.WHATSAPP);
         inboundMessageRequest.setCustomerPhone(payload.from());
         inboundMessageRequest.setMessage(payload.text());
@@ -74,10 +83,11 @@ public class WhatsAppWebhookController {
 
         OutboundMessageResponse response = aiReceptionistService.processInboundMessage(inboundMessageRequest);
         log.info(
-                "Processed WhatsApp inbound message. messageId={}, from={}, phoneNumberId={}, aiResponse='{}'",
+                "Processed WhatsApp inbound message. messageId={}, from={}, phoneNumberId={}, tenantId={}, aiResponse='{}'",
                 payload.messageId(),
                 payload.from(),
                 payload.phoneNumberId(),
+                resolvedTenantId,
                 response.getResponseMessage()
         );
 
