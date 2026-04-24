@@ -5,6 +5,7 @@ import com.aireceptionist.channel.dto.InboundMessageRequest;
 import com.aireceptionist.channel.service.TenantChannelConfigService;
 import com.aireceptionist.channel.dto.OutboundMessageResponse;
 import com.aireceptionist.receptionist.AIReceptionistService;
+import com.aireceptionist.integration.whatsapp.WhatsAppCloudApiClient;
 import com.aireceptionist.webhook.whatsapp.dto.WhatsAppWebhookRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,17 +30,20 @@ public class WhatsAppWebhookController {
     private final AIReceptionistService aiReceptionistService;
     private final TenantChannelConfigService tenantChannelConfigService;
     private final Long defaultTenantId;
+    private final WhatsAppCloudApiClient whatsAppCloudApiClient;
 
     public WhatsAppWebhookController(
             @Value("${whatsapp.verify-token}") String verifyToken,
             @Value("${whatsapp.default-tenant-id:1}") Long defaultTenantId,
             AIReceptionistService aiReceptionistService,
-            TenantChannelConfigService tenantChannelConfigService
+            TenantChannelConfigService tenantChannelConfigService,
+            WhatsAppCloudApiClient whatsAppCloudApiClient
     ) {
         this.verifyToken = verifyToken;
         this.defaultTenantId = defaultTenantId;
         this.aiReceptionistService = aiReceptionistService;
         this.tenantChannelConfigService = tenantChannelConfigService;
+        this.whatsAppCloudApiClient = whatsAppCloudApiClient;
     }
 
     @GetMapping(produces = MediaType.TEXT_PLAIN_VALUE)
@@ -68,8 +72,10 @@ public class WhatsAppWebhookController {
             return ResponseEntity.ok().build();
         }
 
-        Long resolvedTenantId = tenantChannelConfigService
-                .findByChannelAndExternalPhoneNumberId(CommunicationChannel.WHATSAPP, payload.phoneNumberId())
+        var tenantChannelConfig = tenantChannelConfigService
+                .findByChannelAndExternalPhoneNumberId(CommunicationChannel.WHATSAPP, payload.phoneNumberId());
+
+        Long resolvedTenantId = tenantChannelConfig
                 .map(config -> config.getTenantId())
                 .orElse(defaultTenantId);
 
@@ -90,6 +96,41 @@ public class WhatsAppWebhookController {
                 resolvedTenantId,
                 response.getResponseMessage()
         );
+
+        if (response.getResponseMessage() != null && !response.getResponseMessage().isBlank()) {
+            if (tenantChannelConfig.isPresent() && tenantChannelConfig.get().getAccessToken() != null
+                    && !tenantChannelConfig.get().getAccessToken().isBlank()) {
+                boolean sent = whatsAppCloudApiClient.sendTextMessage(
+                        payload.phoneNumberId(),
+                        tenantChannelConfig.get().getAccessToken(),
+                        payload.from(),
+                        response.getResponseMessage()
+                );
+                if (!sent) {
+                    log.warn(
+                            "AI response generated but outbound WhatsApp message failed. messageId={}, from={}, phoneNumberId={}, tenantId={}",
+                            payload.messageId(),
+                            payload.from(),
+                            payload.phoneNumberId(),
+                            resolvedTenantId
+                    );
+                }
+            } else {
+                log.warn(
+                        "AI response generated but no enabled WhatsApp channel config/access token for phoneNumberId={}. tenantId={}",
+                        payload.phoneNumberId(),
+                        resolvedTenantId
+                );
+            }
+        } else {
+            log.warn(
+                    "AI response is blank; skipping outbound WhatsApp message. messageId={}, from={}, phoneNumberId={}, tenantId={}",
+                    payload.messageId(),
+                    payload.from(),
+                    payload.phoneNumberId(),
+                    resolvedTenantId
+            );
+        }
 
         return ResponseEntity.ok().build();
     }
