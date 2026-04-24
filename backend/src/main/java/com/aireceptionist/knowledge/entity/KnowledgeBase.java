@@ -55,30 +55,6 @@ public class KnowledgeBase {
     private Integer priority = 1;
 
     @Builder.Default
-    private String language = "English";
-
-    @Column(name = "alt_questions", columnDefinition = "TEXT")
-    private String altQuestions;
-
-    @Column(columnDefinition = "TEXT")
-    private String keywords;
-
-    @Builder.Default
-    private Integer priority = 1;
-
-    @Builder.Default
-    private String language = "English";
-
-    @Column(name = "alt_questions", columnDefinition = "TEXT")
-    private String altQuestions;
-
-    @Column(columnDefinition = "TEXT")
-    private String keywords;
-
-    @Builder.Default
-    private Integer priority = 1;
-
-    @Builder.Default
     private boolean active = true;
 
     @CreatedDate
