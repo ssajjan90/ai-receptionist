@@ -26,11 +26,13 @@ public class KnowledgeBase {
     private Long tenantId;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private IndustryType industry;
 
     private String category;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private KnowledgeIntent intent;
 
     @Column(nullable = false, columnDefinition = "TEXT")
@@ -38,6 +40,19 @@ public class KnowledgeBase {
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String answer;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String language = "English";
+
+    @Column(name = "alt_questions", columnDefinition = "TEXT")
+    private String altQuestions;
+
+    @Column(columnDefinition = "TEXT")
+    private String keywords;
+
+    @Builder.Default
+    private Integer priority = 1;
 
     @Builder.Default
     private String language = "English";
