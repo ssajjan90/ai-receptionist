@@ -1,7 +1,5 @@
 package com.aireceptionist.receptionist;
 
-import com.aireceptionist.ai.AIProviderClient;
-import com.aireceptionist.ai.AIRequest;
 import com.aireceptionist.channel.CommunicationChannel;
 import com.aireceptionist.channel.dto.InboundMessageRequest;
 import com.aireceptionist.channel.dto.OutboundMessageResponse;
@@ -9,8 +7,9 @@ import com.aireceptionist.common.exception.BadRequestException;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
 import com.aireceptionist.conversation.entity.Conversation;
 import com.aireceptionist.conversation.service.ConversationService;
+import com.aireceptionist.knowledge.entity.IndustryType;
 import com.aireceptionist.knowledge.entity.KnowledgeBase;
-import com.aireceptionist.knowledge.repository.KnowledgeBaseRepository;
+import com.aireceptionist.knowledge.service.KnowledgeService;
 import com.aireceptionist.lead.entity.Lead;
 import com.aireceptionist.lead.service.LeadService;
 import com.aireceptionist.tenant.entity.Tenant;
@@ -22,12 +21,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class AIReceptionistService {
+
+    private static final String NO_MATCH_FALLBACK = "Thank you for contacting us. Please share your name and phone number. Our team will get back to you shortly.";
 
     private static final Set<String> LEAD_INTENT_KEYWORDS = Set.of(
             "appointment",
@@ -39,8 +39,7 @@ public class AIReceptionistService {
     );
 
     private final TenantRepository tenantRepository;
-    private final AIProviderClient aiProviderClient;
-    private final KnowledgeBaseRepository knowledgeBaseRepository;
+    private final KnowledgeService knowledgeService;
     private final LeadService leadService;
     private final ConversationService conversationService;
 
@@ -57,8 +56,14 @@ public class AIReceptionistService {
         );
         conversationService.saveInbound(conversation, request.getMessage());
 
-        List<KnowledgeBase> knowledgeEntries = knowledgeBaseRepository.findByTenantIdAndActiveTrue(tenant.getId());
-        String responseMessage = aiProviderClient.generateResponse(buildAIRequest(tenant, knowledgeEntries, request.getMessage()));
+        List<KnowledgeBase> matches = knowledgeService.findBestMatches(
+                tenant.getId(),
+                resolveIndustry(tenant.getIndustry()),
+                request.getMessage(),
+                tenant.getDefaultLanguage()
+        );
+
+        String responseMessage = matches.isEmpty() ? NO_MATCH_FALLBACK : matches.get(0).getAnswer();
 
         boolean leadCreated = isLeadIntent(request.getMessage());
         if (leadCreated) {
@@ -82,6 +87,19 @@ public class AIReceptionistService {
                 .build();
     }
 
+    private IndustryType resolveIndustry(String industry) {
+        if (industry == null || industry.isBlank()) {
+            return IndustryType.CLINIC;
+        }
+
+        String normalized = industry.trim().toUpperCase(Locale.ROOT).replace(' ', '_').replace('-', '_');
+        try {
+            return IndustryType.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            return IndustryType.CLINIC;
+        }
+    }
+
     private void validateInboundRequest(InboundMessageRequest request) {
         if (request == null) {
             throw new BadRequestException("Inbound message request is required.");
@@ -92,20 +110,6 @@ public class AIReceptionistService {
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             throw new BadRequestException("Message is required.");
         }
-    }
-
-    private AIRequest buildAIRequest(Tenant tenant, List<KnowledgeBase> knowledgeEntries, String customerMessage) {
-        String knowledgeBase = knowledgeEntries.stream()
-                .map(entry -> "Q: " + entry.getQuestion() + System.lineSeparator() + "A: " + entry.getAnswer())
-                .collect(Collectors.joining(System.lineSeparator() + System.lineSeparator()));
-
-        return AIRequest.builder()
-                .tenantName(tenant.getName())
-                .industry(tenant.getIndustry())
-                .workingHours(tenant.getWorkingHours())
-                .knowledgeBase(knowledgeBase)
-                .customerMessage(customerMessage)
-                .build();
     }
 
     private String normalizeMessage(String input) {
@@ -128,5 +132,4 @@ public class AIReceptionistService {
             default -> Lead.LeadSource.CHAT;
         };
     }
-
 }
