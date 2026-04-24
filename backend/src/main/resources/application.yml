@@ -4,16 +4,16 @@ server:
 spring:
   application:
     name: ai-receptionist
-
   datasource:
-    url: jdbc:postgresql://localhost:5432/ai_receptionist
-    username: aireceptionist
-    password: aireceptionist_pass
+    url: jdbc:postgresql://localhost:5432/ai-receptionist
+    username: postgres
+    password: Admin@1234
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
       ddl-auto: update
+      defer-datasource-initialization: true
     show-sql: false
     properties:
       hibernate:
@@ -48,3 +48,8 @@ openai:
 app:
   cors:
     allowed-origins: http://localhost:3000,http://localhost:5173
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
