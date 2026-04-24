@@ -220,6 +220,33 @@ curl -X POST http://localhost:8080/api/chat \
 }
 ```
 
+
+### Multi-Channel Setup (Step 1)
+
+```bash
+# Create channel configuration for tenant
+curl -X POST http://localhost:8080/api/tenants/1/channels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel": "WHATSAPP",
+    "enabled": true,
+    "botDisplayName": "City Dental Assistant",
+    "welcomeMessage": "Hi! Welcome to City Dental. How may I help you today?",
+    "webhookUrl": "https://hooks.example.com/whatsapp/city-dental",
+    "providerConfig": "{\"provider\":\"meta\",\"phoneNumberId\":\"1234567890\"}"
+  }'
+
+# List tenant channels
+curl http://localhost:8080/api/tenants/1/channels
+
+# Disable WhatsApp channel
+curl -X PATCH http://localhost:8080/api/tenants/1/channels/WHATSAPP/status \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+```
+
+Detailed Postman requests are available at `backend/docs/multi-channel-step-1-postman.md`.
+
 ### Auth (JWT-ready)
 
 ```bash
