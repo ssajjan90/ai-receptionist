@@ -105,23 +105,65 @@ curl -X DELETE http://localhost:8080/api/tenants/1
 ### Knowledge Base
 
 ```bash
-# Add knowledge entry
-curl -X POST http://localhost:8080/api/tenants/1/knowledge \
+# Create tenant-specific knowledge entry (new endpoint)
+curl -X POST http://localhost:8080/api/knowledge-base \
   -H "Content-Type: application/json" \
   -d '{
-    "type": "FAQ",
-    "question": "Do you accept walk-ins?",
-    "answer": "Yes, walk-ins are welcome but appointments are preferred.",
+    "tenantId": 1,
+    "industry": "CLINIC",
+    "category": "Hours",
+    "intent": "HOURS",
+    "question": "Are you open on Sunday?",
+    "answer": "Please share your preferred date and time. Our team will confirm slot availability.",
+    "language": "English",
+    "altQuestions": ["Sunday open?", "Weekend timings"],
+    "keywords": ["hours", "timings", "open"],
+    "priority": 8,
     "active": true
   }'
 
-# List knowledge for tenant
+# Existing endpoint still works (tenant-scoped create)
+curl -X POST http://localhost:8080/api/tenants/1/knowledge \
+  -H "Content-Type: application/json" \
+  -d '{
+    "industry": "CLINIC",
+    "category": "Services",
+    "intent": "SERVICES",
+    "question": "Do you offer dental cleaning?",
+    "answer": "Please share your preferred date and phone number. Our team will call you with service details.",
+    "language": "English",
+    "altQuestions": ["Teeth cleaning available?"],
+    "keywords": ["cleaning", "dental"],
+    "priority": 7,
+    "active": true
+  }'
+
+# List knowledge for tenant (new + existing)
+curl http://localhost:8080/api/knowledge-base/tenant/1
 curl http://localhost:8080/api/tenants/1/knowledge
+
+# List default active entries by industry
+curl http://localhost:8080/api/knowledge-base/industry/CLINIC
+
+# Seed default multilingual entries for all industries
+curl -X POST http://localhost:8080/api/knowledge-base/seed-defaults
 
 # Update entry
 curl -X PUT http://localhost:8080/api/knowledge/1 \
   -H "Content-Type: application/json" \
-  -d '{"type": "FAQ", "question": "Do you accept walk-ins?", "answer": "Appointments only now.", "active": true}'
+  -d '{
+    "tenantId": 1,
+    "industry": "CLINIC",
+    "category": "Hours",
+    "intent": "HOURS",
+    "question": "Are you open on Sunday?",
+    "answer": "Please share your preferred date/time and phone number. Our team will confirm availability.",
+    "language": "English",
+    "altQuestions": ["Sunday open?"],
+    "keywords": ["hours", "open"],
+    "priority": 9,
+    "active": true
+  }'
 
 # Delete entry
 curl -X DELETE http://localhost:8080/api/knowledge/1
