@@ -19,10 +19,10 @@ import java.util.Map;
 @Service
 public class JwtService {
 
-    @Value("${app.jwt.secret}")
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
-    @Value("${app.jwt.expiration-ms:86400000}")
+    @Value("${jwt.expiration-ms:86400000}")
     private long jwtExpirationMs;
 
     private SecretKey signingKey;
@@ -35,6 +35,7 @@ public class JwtService {
     public String generateToken(User user) {
         Instant now = Instant.now();
         Map<String, Object> claims = new HashMap<>();
+        claims.put("userId", user.getId());
         claims.put("role", user.getRole().name());
         claims.put("tenantId", user.getTenantId());
 
@@ -51,7 +52,7 @@ public class JwtService {
         return extractAllClaims(token).getSubject();
     }
 
-    public boolean isValid(String token) {
+    public boolean validateToken(String token) {
         try {
             extractAllClaims(token);
             return true;
