@@ -5,6 +5,8 @@ import com.aireceptionist.channel.dto.InboundMessageRequest;
 import com.aireceptionist.channel.dto.OutboundMessageResponse;
 import com.aireceptionist.common.exception.BadRequestException;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
+import com.aireceptionist.conversation.entity.Conversation;
+import com.aireceptionist.conversation.service.ConversationService;
 import com.aireceptionist.knowledge.entity.KnowledgeBase;
 import com.aireceptionist.knowledge.repository.KnowledgeBaseRepository;
 import com.aireceptionist.lead.entity.Lead;
@@ -38,12 +40,20 @@ public class AIReceptionistService {
     private final TenantRepository tenantRepository;
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final LeadService leadService;
+    private final ConversationService conversationService;
 
     public OutboundMessageResponse processInboundMessage(InboundMessageRequest request) {
         validateInboundRequest(request);
 
         Tenant tenant = tenantRepository.findById(request.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", request.getTenantId()));
+
+        Conversation conversation = conversationService.findOrCreateConversation(
+                tenant.getId(),
+                request.getChannel(),
+                request.getCustomerPhone()
+        );
+        conversationService.saveInbound(conversation, request.getMessage());
 
         List<KnowledgeBase> knowledgeEntries = knowledgeBaseRepository.findByTenantIdAndActiveTrue(tenant.getId());
         String responseMessage = generateResponse(request.getMessage(), knowledgeEntries);
@@ -58,13 +68,15 @@ public class AIReceptionistService {
             );
         }
 
+        conversationService.saveOutbound(conversation, responseMessage);
+
         return OutboundMessageResponse.builder()
                 .tenantId(tenant.getId())
                 .channel(request.getChannel())
                 .customerPhone(request.getCustomerPhone())
                 .responseMessage(responseMessage)
                 .leadCreated(leadCreated)
-                .conversationId(null)
+                .conversationId(String.valueOf(conversation.getId()))
                 .build();
     }
 
