@@ -52,3 +52,5 @@ app:
 
 whatsapp:
   verify-token: ${WHATSAPP_VERIFY_TOKEN:change-me}
+  api:
+    base-url: ${WHATSAPP_API_BASE_URL:https://graph.facebook.com}
