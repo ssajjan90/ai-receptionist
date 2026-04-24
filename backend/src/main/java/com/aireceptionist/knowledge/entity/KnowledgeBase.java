@@ -22,18 +22,34 @@ public class KnowledgeBase {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private KnowledgeType type;
+    private IndustryType industry;
+
+    private String category;
+
+    @Enumerated(EnumType.STRING)
+    private KnowledgeIntent intent;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String question;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String answer;
+
+    @Builder.Default
+    private String language = "English";
+
+    @Column(name = "alt_questions", columnDefinition = "TEXT")
+    private String altQuestions;
+
+    @Column(columnDefinition = "TEXT")
+    private String keywords;
+
+    @Builder.Default
+    private Integer priority = 1;
 
     @Builder.Default
     private boolean active = true;
@@ -45,8 +61,4 @@ public class KnowledgeBase {
     @LastModifiedDate
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-
-    public enum KnowledgeType {
-        FAQ, SERVICE, POLICY
-    }
 }
