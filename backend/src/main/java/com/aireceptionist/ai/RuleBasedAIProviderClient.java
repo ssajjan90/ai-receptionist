@@ -1,6 +1,7 @@
 package com.aireceptionist.ai;
 
 import com.aireceptionist.common.exception.BadRequestException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -8,6 +9,7 @@ import java.util.Locale;
 import java.util.Set;
 
 @Component
+@ConditionalOnProperty(name = "ai.provider", havingValue = "rule-based", matchIfMissing = true)
 public class RuleBasedAIProviderClient implements AIProviderClient {
 
     private static final String DEFAULT_REPLY = "Thank you for contacting us. We will get back to you shortly.";
