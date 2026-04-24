@@ -4,6 +4,8 @@ import com.aireceptionist.channel.CommunicationChannel;
 import com.aireceptionist.channel.dto.InboundMessageRequest;
 import com.aireceptionist.channel.dto.OutboundMessageResponse;
 import com.aireceptionist.receptionist.AIReceptionistService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/webhooks/voice")
 @RequiredArgsConstructor
+@Tag(name = "Voice Webhooks", description = "Voice provider webhook callbacks")
 public class VoiceWebhookController {
 
     private static final String PROMPT_TO_SPEAK = "I didn't catch that. Please tell me how I can help you.";
@@ -28,6 +31,7 @@ public class VoiceWebhookController {
     private Long defaultTenantId;
 
     @PostMapping(value = "/incoming", produces = MediaType.APPLICATION_XML_VALUE)
+    @Operation(summary = "Handle incoming voice webhook callback")
     public ResponseEntity<String> handleIncoming(
             @RequestParam("From") String from,
             @RequestParam("To") String to,

@@ -1,6 +1,7 @@
 package com.aireceptionist.admin.controller;
 
 import com.aireceptionist.admin.dto.AdminConversationResponse;
+import com.aireceptionist.admin.dto.AdminConversationMessageResponse;
 import com.aireceptionist.admin.service.AdminApiService;
 import com.aireceptionist.common.response.ApiResponse;
 import com.aireceptionist.lead.dto.LeadResponse;
@@ -33,6 +34,15 @@ public class AdminController {
     @Operation(summary = "Get conversation details by ID")
     public ResponseEntity<ApiResponse<AdminConversationResponse>> getConversationById(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok(adminApiService.getConversationById(id)));
+    }
+
+    @GetMapping("/conversations/{conversationId}/messages")
+    @Operation(summary = "Get conversation message history by conversation ID")
+    public ResponseEntity<ApiResponse<List<AdminConversationMessageResponse>>> getConversationMessages(
+            @PathVariable Long conversationId
+    ) {
+        AdminConversationResponse conversation = adminApiService.getConversationById(conversationId);
+        return ResponseEntity.ok(ApiResponse.ok(conversation.getMessages()));
     }
 
     @GetMapping("/leads/tenant/{tenantId}")
