@@ -7,6 +7,8 @@ import com.aireceptionist.channel.dto.OutboundMessageResponse;
 import com.aireceptionist.receptionist.AIReceptionistService;
 import com.aireceptionist.integration.whatsapp.WhatsAppCloudApiClient;
 import com.aireceptionist.webhook.whatsapp.dto.WhatsAppWebhookRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -24,6 +26,7 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/api/webhooks/whatsapp")
+@Tag(name = "WhatsApp Webhooks", description = "Meta WhatsApp webhook verification and inbound message handling")
 public class WhatsAppWebhookController {
 
     private final String verifyToken;
@@ -47,6 +50,7 @@ public class WhatsAppWebhookController {
     }
 
     @GetMapping(produces = MediaType.TEXT_PLAIN_VALUE)
+    @Operation(summary = "Verify WhatsApp webhook callback")
     public ResponseEntity<String> verifyWebhook(
             @RequestParam("hub.mode") String mode,
             @RequestParam("hub.challenge") String challenge,
@@ -64,6 +68,7 @@ public class WhatsAppWebhookController {
     }
 
     @PostMapping
+    @Operation(summary = "Handle inbound WhatsApp webhook event")
     public ResponseEntity<Void> handleWebhook(@RequestBody WhatsAppWebhookRequest request) {
         ParsedWebhookPayload payload = parseWebhookPayload(request);
 
