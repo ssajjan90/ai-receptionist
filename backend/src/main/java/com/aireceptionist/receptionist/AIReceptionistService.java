@@ -1,10 +1,14 @@
 package com.aireceptionist.receptionist;
 
+import com.aireceptionist.ai.AIProviderClient;
+import com.aireceptionist.ai.AIRequest;
 import com.aireceptionist.channel.CommunicationChannel;
 import com.aireceptionist.channel.dto.InboundMessageRequest;
 import com.aireceptionist.channel.dto.OutboundMessageResponse;
 import com.aireceptionist.common.exception.BadRequestException;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
+import com.aireceptionist.conversation.entity.Conversation;
+import com.aireceptionist.conversation.service.ConversationService;
 import com.aireceptionist.knowledge.entity.KnowledgeBase;
 import com.aireceptionist.knowledge.repository.KnowledgeBaseRepository;
 import com.aireceptionist.lead.entity.Lead;
@@ -18,13 +22,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class AIReceptionistService {
-
-    private static final String DEFAULT_REPLY = "Thank you for contacting us. We will get back to you shortly.";
 
     private static final Set<String> LEAD_INTENT_KEYWORDS = Set.of(
             "appointment",
@@ -36,8 +39,10 @@ public class AIReceptionistService {
     );
 
     private final TenantRepository tenantRepository;
+    private final AIProviderClient aiProviderClient;
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final LeadService leadService;
+    private final ConversationService conversationService;
 
     public OutboundMessageResponse processInboundMessage(InboundMessageRequest request) {
         validateInboundRequest(request);
@@ -45,8 +50,15 @@ public class AIReceptionistService {
         Tenant tenant = tenantRepository.findById(request.getTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant", request.getTenantId()));
 
+        Conversation conversation = conversationService.findOrCreateConversation(
+                tenant.getId(),
+                request.getChannel(),
+                request.getCustomerPhone()
+        );
+        conversationService.saveInbound(conversation, request.getMessage());
+
         List<KnowledgeBase> knowledgeEntries = knowledgeBaseRepository.findByTenantIdAndActiveTrue(tenant.getId());
-        String responseMessage = generateResponse(request.getMessage(), knowledgeEntries);
+        String responseMessage = aiProviderClient.generateResponse(buildAIRequest(tenant, knowledgeEntries, request.getMessage()));
 
         boolean leadCreated = isLeadIntent(request.getMessage());
         if (leadCreated) {
@@ -58,13 +70,15 @@ public class AIReceptionistService {
             );
         }
 
+        conversationService.saveOutbound(conversation, responseMessage);
+
         return OutboundMessageResponse.builder()
                 .tenantId(tenant.getId())
                 .channel(request.getChannel())
                 .customerPhone(request.getCustomerPhone())
                 .responseMessage(responseMessage)
                 .leadCreated(leadCreated)
-                .conversationId(null)
+                .conversationId(String.valueOf(conversation.getId()))
                 .build();
     }
 
@@ -80,23 +94,26 @@ public class AIReceptionistService {
         }
     }
 
-    private String generateResponse(String message, List<KnowledgeBase> knowledgeEntries) {
-        String normalizedMessage = normalize(message);
+    private AIRequest buildAIRequest(Tenant tenant, List<KnowledgeBase> knowledgeEntries, String customerMessage) {
+        String knowledgeBase = knowledgeEntries.stream()
+                .map(entry -> "Q: " + entry.getQuestion() + System.lineSeparator() + "A: " + entry.getAnswer())
+                .collect(Collectors.joining(System.lineSeparator() + System.lineSeparator()));
 
-        for (KnowledgeBase entry : knowledgeEntries) {
-            String normalizedQuestion = normalize(entry.getQuestion());
-            if (normalizedQuestion.equals(normalizedMessage)
-                    || normalizedMessage.contains(normalizedQuestion)
-                    || normalizedQuestion.contains(normalizedMessage)) {
-                return entry.getAnswer();
-            }
-        }
+        return AIRequest.builder()
+                .tenantName(tenant.getName())
+                .industry(tenant.getIndustry())
+                .workingHours(tenant.getWorkingHours())
+                .knowledgeBase(knowledgeBase)
+                .customerMessage(customerMessage)
+                .build();
+    }
 
-        return DEFAULT_REPLY;
+    private String normalizeMessage(String input) {
+        return input == null ? "" : input.toLowerCase(Locale.ROOT).trim();
     }
 
     private boolean isLeadIntent(String message) {
-        String normalizedMessage = normalize(message);
+        String normalizedMessage = normalizeMessage(message);
         return LEAD_INTENT_KEYWORDS.stream().anyMatch(normalizedMessage::contains);
     }
 
@@ -112,7 +129,4 @@ public class AIReceptionistService {
         };
     }
 
-    private String normalize(String input) {
-        return input == null ? "" : input.toLowerCase(Locale.ROOT).trim();
-    }
 }

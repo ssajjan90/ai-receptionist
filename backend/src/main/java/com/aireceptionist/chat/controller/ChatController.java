@@ -25,8 +25,7 @@ public class ChatController {
     @PostMapping("/chat")
     @Operation(
             summary = "Send a message to the AI receptionist",
-            description = "Processes a customer message, detects intent, generates an AI reply, " +
-                          "and optionally creates a lead record."
+            description = "Processes a customer message via AIReceptionistService and returns the AI reply."
     )
     public ResponseEntity<ApiResponse<ChatResponse>> chat(@Valid @RequestBody ChatRequest request) {
         ChatResponse response = chatService.processChat(request);

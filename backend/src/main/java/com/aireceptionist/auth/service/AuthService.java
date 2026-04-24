@@ -5,6 +5,7 @@ import com.aireceptionist.auth.dto.LoginRequest;
 import com.aireceptionist.auth.dto.RegisterRequest;
 import com.aireceptionist.auth.entity.User;
 import com.aireceptionist.auth.repository.UserRepository;
+import com.aireceptionist.auth.security.JwtService;
 import com.aireceptionist.common.exception.BadRequestException;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -37,7 +39,8 @@ public class AuthService {
                 .name(user.getName())
                 .role(user.getRole())
                 .tenantId(user.getTenantId())
-                .message("Registration successful. JWT integration coming soon.")
+                .token(jwtService.generateToken(user))
+                .message("Registration successful.")
                 .build();
     }
 
@@ -49,13 +52,12 @@ public class AuthService {
             throw new BadRequestException("Invalid credentials.");
         }
 
-        // TODO: generate and return a JWT token here
         return AuthResponse.builder()
                 .email(user.getEmail())
                 .name(user.getName())
                 .role(user.getRole())
                 .tenantId(user.getTenantId())
-                .token("JWT_TOKEN_PLACEHOLDER — wire in Spring Security JWT here")
+                .token(jwtService.generateToken(user))
                 .message("Login successful.")
                 .build();
     }

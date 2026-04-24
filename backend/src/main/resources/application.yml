@@ -45,9 +45,32 @@ openai:
     max-tokens: 500
     temperature: 0.7
 
+
+whatsapp:
+  verify-token: ${WHATSAPP_VERIFY_TOKEN:change-me}
+  api:
+    base-url: ${WHATSAPP_API_BASE_URL:https://graph.facebook.com}
+
+
 app:
   cors:
     allowed-origins: http://localhost:3000,http://localhost:5173
+
+jwt:
+  secret: ${JWT_SECRET:change-this-to-a-long-random-32-byte-secret-key-at-least}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+
+
+ai:
+  provider: ${AI_PROVIDER:rule-based}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    max-tokens: ${OPENAI_MAX_TOKENS:300}
+    temperature: ${OPENAI_TEMPERATURE:0.3}
+
 management:
   endpoints:
     web:
