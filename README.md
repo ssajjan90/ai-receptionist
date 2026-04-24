@@ -302,3 +302,25 @@ When intent is `APPOINTMENT_BOOKING` or `HUMAN_HANDOFF`, a **lead is automatical
 - [ ] React frontend dashboard
 - [ ] Analytics module (chat volume, lead conversion rate)
 - [ ] Multi-language AI prompt templates
+
+## Frontend Test UI (React + Vite)
+
+A simple frontend test app is available in `frontend/`.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend runs on Vite default `http://localhost:5173` and targets backend base URL:
+
+- `http://localhost:8080/api`
+
+Included pages:
+
+- Login (JWT token stored in localStorage)
+- Dashboard
+- Knowledge Base (create/list FAQs by tenant)
+- Chat Test (POST `/api/chat`)
+- Leads (list by tenant)
