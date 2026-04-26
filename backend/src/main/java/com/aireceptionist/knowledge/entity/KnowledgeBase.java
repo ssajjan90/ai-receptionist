@@ -45,6 +45,10 @@ public class KnowledgeBase {
     @Builder.Default
     private String language = "English";
 
+    @Column(nullable = false)
+    @Builder.Default
+    private String type = "SERVICE";
+
     @Column(name = "alt_questions", columnDefinition = "TEXT")
     private String altQuestions;
 

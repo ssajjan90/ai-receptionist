@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 public class KnowledgeService {
 
     private static final String ENGLISH = "English";
+    private static final String DEFAULT_KNOWLEDGE_TYPE = "SERVICE";
 
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final TenantService tenantService;
@@ -138,6 +139,7 @@ public class KnowledgeService {
         kb.setQuestion(request.getQuestion());
         kb.setAnswer(request.getAnswer());
         kb.setLanguage(normalizeLanguage(request.getLanguage()));
+        kb.setType(kb.getType() == null || kb.getType().isBlank() ? DEFAULT_KNOWLEDGE_TYPE : kb.getType());
         kb.setAltQuestions(joinList(request.getAltQuestions()));
         kb.setKeywords(joinList(request.getKeywords()));
         kb.setPriority(request.getPriority() == null ? 1 : request.getPriority());
