@@ -5,9 +5,9 @@ spring:
   application:
     name: ai-receptionist
   datasource:
-    url: jdbc:postgresql://localhost:5432/ai-receptionist
-    username: postgres
-    password: Admin@1234
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ai_receptionist}
+    username: ${SPRING_DATASOURCE_USERNAME:aireceptionist}
+    password: ${SPRING_DATASOURCE_PASSWORD:aireceptionist_pass}
     driver-class-name: org.postgresql.Driver
 
   jpa:
