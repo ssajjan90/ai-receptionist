@@ -26,13 +26,13 @@ public class KnowledgeBase {
     private Long tenantId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "varchar(255) default 'CLINIC'")
     private IndustryType industry;
 
     private String category;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "varchar(255) default 'SERVICES'")
     private KnowledgeIntent intent;
 
     @Column(nullable = false, columnDefinition = "TEXT")
