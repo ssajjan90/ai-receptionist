@@ -29,6 +29,17 @@ BEGIN
     ) THEN
         EXECUTE $SQL$
             UPDATE knowledge_base
+            SET type = 'SERVICE'
+            WHERE type IS NULL
+        $SQL$;
+
+        EXECUTE $SQL$
+            ALTER TABLE knowledge_base
+            ALTER COLUMN type SET DEFAULT 'SERVICE'
+        $SQL$;
+
+        EXECUTE $SQL$
+            UPDATE knowledge_base
             SET intent = CASE
                 WHEN upper(type) = 'POLICY' THEN 'CANCELLATION'
                 WHEN upper(type) = 'SERVICE' THEN 'SERVICES'
