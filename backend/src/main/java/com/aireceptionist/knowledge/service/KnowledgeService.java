@@ -1,5 +1,6 @@
 package com.aireceptionist.knowledge.service;
 
+import com.aireceptionist.auth.security.AuthUtils;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
 import com.aireceptionist.knowledge.dto.KnowledgeBaseRequest;
 import com.aireceptionist.knowledge.dto.KnowledgeBaseResponse;
@@ -25,6 +26,7 @@ public class KnowledgeService {
 
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final TenantService tenantService;
+    private final AuthUtils authUtils;
 
     public List<KnowledgeBaseResponse> findByTenant(Long tenantId) {
         tenantService.getTenantOrThrow(tenantId);
@@ -33,6 +35,7 @@ public class KnowledgeService {
                 .toList();
     }
 
+    // tenant-scoped: caller may only access own tenant data
     public Long getTenantIdByKnowledgeId(Long id) {
         return getOrThrow(id).getTenantId();
     }
@@ -74,7 +77,11 @@ public class KnowledgeService {
     }
 
     @Transactional
+    // tenant-scoped: caller may only access own tenant data
     public KnowledgeBaseResponse create(KnowledgeBaseRequest request) {
+        if (!authUtils.isCurrentUserSuperAdmin()) {
+            request.setTenantId(authUtils.getCurrentUserTenantId());
+        }
         if (request.getTenantId() != null) {
             tenantService.getTenantOrThrow(request.getTenantId());
         }
@@ -91,8 +98,12 @@ public class KnowledgeService {
     }
 
     @Transactional
+    // tenant-scoped: caller may only access own tenant data
     public KnowledgeBaseResponse update(Long id, KnowledgeBaseRequest request) {
         KnowledgeBase existing = getOrThrow(id);
+        if (!authUtils.isCurrentUserSuperAdmin()) {
+            request.setTenantId(authUtils.getCurrentUserTenantId());
+        }
         if (request.getTenantId() != null) {
             tenantService.getTenantOrThrow(request.getTenantId());
         }
@@ -102,6 +113,7 @@ public class KnowledgeService {
     }
 
     @Transactional
+    // tenant-scoped: caller may only access own tenant data
     public void delete(Long id) {
         getOrThrow(id);
         knowledgeBaseRepository.deleteById(id);
@@ -129,6 +141,10 @@ public class KnowledgeService {
     }
 
     private KnowledgeBase getOrThrow(Long id) {
+        if (!authUtils.isCurrentUserSuperAdmin()) {
+            return knowledgeBaseRepository.findByIdAndTenantId(id, authUtils.getCurrentUserTenantId())
+                    .orElseThrow(() -> new ResourceNotFoundException("KnowledgeBase", id));
+        }
         return knowledgeBaseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("KnowledgeBase", id));
     }

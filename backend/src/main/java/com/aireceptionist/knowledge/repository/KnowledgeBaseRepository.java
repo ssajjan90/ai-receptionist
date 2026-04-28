@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface KnowledgeBaseRepository extends JpaRepository<KnowledgeBase, Long> {
@@ -24,4 +25,6 @@ public interface KnowledgeBaseRepository extends JpaRepository<KnowledgeBase, Lo
                                                                                             String language);
 
     List<KnowledgeBase> findByTenantIdIsNullAndIndustryAndActiveTrue(IndustryType industry);
+
+    Optional<KnowledgeBase> findByIdAndTenantId(Long id, Long tenantId);
 }

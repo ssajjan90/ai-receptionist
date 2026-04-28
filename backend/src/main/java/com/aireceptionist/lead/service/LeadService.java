@@ -1,5 +1,6 @@
 package com.aireceptionist.lead.service;
 
+import com.aireceptionist.auth.security.AuthUtils;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
 import com.aireceptionist.lead.dto.LeadRequest;
 import com.aireceptionist.lead.dto.LeadResponse;
@@ -20,7 +21,9 @@ public class LeadService {
 
     private final LeadRepository leadRepository;
     private final TenantService tenantService;
+    private final AuthUtils authUtils;
 
+    // tenant-scoped: caller may only access own tenant data
     public LeadResponse findById(Long id) {
         return toResponse(getOrThrow(id));
     }
@@ -32,12 +35,17 @@ public class LeadService {
                 .toList();
     }
 
+    // tenant-scoped: caller may only access own tenant data
     public Long getTenantIdByLeadId(Long id) {
         return getOrThrow(id).getTenantId();
     }
 
     @Transactional
+    // tenant-scoped: caller may only access own tenant data
     public LeadResponse create(LeadRequest request) {
+        if (!authUtils.isCurrentUserSuperAdmin()) {
+            request.setTenantId(authUtils.getCurrentUserTenantId());
+        }
         tenantService.getTenantOrThrow(request.getTenantId());
         Lead lead = Lead.builder()
                 .tenantId(request.getTenantId())
@@ -62,6 +70,7 @@ public class LeadService {
     }
 
     @Transactional
+    // tenant-scoped: caller may only access own tenant data
     public LeadResponse updateStatus(Long id, LeadStatusRequest request) {
         Lead lead = getOrThrow(id);
         lead.setStatus(request.getStatus());
@@ -69,6 +78,10 @@ public class LeadService {
     }
 
     private Lead getOrThrow(Long id) {
+        if (!authUtils.isCurrentUserSuperAdmin()) {
+            return leadRepository.findByIdAndTenantId(id, authUtils.getCurrentUserTenantId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Lead", id));
+        }
         return leadRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Lead", id));
     }
