@@ -2,6 +2,7 @@ package com.aireceptionist.auth.controller;
 
 import com.aireceptionist.auth.dto.AuthResponse;
 import com.aireceptionist.auth.dto.LoginRequest;
+import com.aireceptionist.auth.dto.RefreshTokenRequest;
 import com.aireceptionist.auth.dto.RegisterRequest;
 import com.aireceptionist.auth.service.AuthService;
 import com.aireceptionist.common.response.ApiResponse;
@@ -35,5 +36,11 @@ public class AuthController {
     @Operation(summary = "Login and receive a token")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(ApiResponse.ok(authService.login(request)));
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "Refresh access token")
+    public ResponseEntity<ApiResponse<AuthResponse>> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(authService.refreshAccessToken(request.getRefreshToken())));
     }
 }

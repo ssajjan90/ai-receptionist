@@ -5,7 +5,7 @@ import com.aireceptionist.auth.dto.LoginRequest;
 import com.aireceptionist.auth.dto.RegisterRequest;
 import com.aireceptionist.auth.entity.User;
 import com.aireceptionist.auth.repository.UserRepository;
-import com.aireceptionist.auth.security.JwtService;
+import com.aireceptionist.auth.security.JwtTokenProvider;
 import com.aireceptionist.common.exception.BadRequestException;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
+    private final JwtTokenProvider jwtTokenProvider;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -34,14 +34,7 @@ public class AuthService {
                 .build();
         userRepository.save(user);
 
-        return AuthResponse.builder()
-                .email(user.getEmail())
-                .name(user.getName())
-                .role(user.getRole())
-                .tenantId(user.getTenantId())
-                .token(jwtService.generateToken(user))
-                .message("Registration successful.")
-                .build();
+        return buildAuthResponse(user, "Registration successful.");
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -52,13 +45,48 @@ public class AuthService {
             throw new BadRequestException("Invalid credentials.");
         }
 
+        return buildAuthResponse(user, "Login successful.");
+    }
+
+    public AuthResponse refreshAccessToken(String refreshToken) {
+        if (!jwtTokenProvider.validateToken(refreshToken)) {
+            throw new BadRequestException("Invalid refresh token.");
+        }
+
+        Long userId = jwtTokenProvider.extractUserId(refreshToken);
+        if (userId == null) {
+            throw new BadRequestException("Refresh token missing userId claim.");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+
+        String accessToken = jwtTokenProvider.generateAccessToken(user);
+        return AuthResponse.builder()
+                .token(accessToken)
+                .refreshToken(refreshToken)
+                .expiresIn(jwtTokenProvider.getAccessTokenExpirationMs())
+                .email(user.getEmail())
+                .name(user.getName())
+                .role(user.getRole())
+                .tenantId(user.getTenantId())
+                .message("Token refreshed successfully.")
+                .build();
+    }
+
+    private AuthResponse buildAuthResponse(User user, String message) {
+        String accessToken = jwtTokenProvider.generateAccessToken(user);
+        String refreshToken = jwtTokenProvider.generateRefreshToken(user);
+
         return AuthResponse.builder()
                 .email(user.getEmail())
                 .name(user.getName())
                 .role(user.getRole())
                 .tenantId(user.getTenantId())
-                .token(jwtService.generateToken(user))
-                .message("Login successful.")
+                .token(accessToken)
+                .refreshToken(refreshToken)
+                .expiresIn(jwtTokenProvider.getAccessTokenExpirationMs())
+                .message(message)
                 .build();
     }
 }
