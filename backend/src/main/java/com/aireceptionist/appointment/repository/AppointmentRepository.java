@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
@@ -16,4 +17,6 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     List<Appointment> findByTenantIdAndStatus(Long tenantId, AppointmentStatus status);
 
     List<Appointment> findByTenantIdAndAppointmentTimeBetween(Long tenantId, LocalDateTime from, LocalDateTime to);
+
+    Optional<Appointment> findByIdAndTenantId(Long id, Long tenantId);
 }

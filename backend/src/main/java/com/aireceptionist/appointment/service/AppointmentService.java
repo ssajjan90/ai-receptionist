@@ -5,6 +5,7 @@ import com.aireceptionist.appointment.dto.AppointmentResponse;
 import com.aireceptionist.appointment.dto.AppointmentStatusRequest;
 import com.aireceptionist.appointment.entity.Appointment;
 import com.aireceptionist.appointment.repository.AppointmentRepository;
+import com.aireceptionist.auth.security.AuthUtils;
 import com.aireceptionist.common.exception.ResourceNotFoundException;
 import com.aireceptionist.tenant.service.TenantService;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +21,9 @@ public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
     private final TenantService tenantService;
+    private final AuthUtils authUtils;
 
+    // tenant-scoped: caller may only access own tenant data
     public AppointmentResponse findById(Long id) {
         return toResponse(getOrThrow(id));
     }
@@ -32,12 +35,17 @@ public class AppointmentService {
                 .toList();
     }
 
+    // tenant-scoped: caller may only access own tenant data
     public Long getTenantIdByAppointmentId(Long id) {
         return getOrThrow(id).getTenantId();
     }
 
     @Transactional
+    // tenant-scoped: caller may only access own tenant data
     public AppointmentResponse create(AppointmentRequest request) {
+        if (!authUtils.isCurrentUserSuperAdmin()) {
+            request.setTenantId(authUtils.getCurrentUserTenantId());
+        }
         tenantService.getTenantOrThrow(request.getTenantId());
         Appointment appointment = Appointment.builder()
                 .tenantId(request.getTenantId())
@@ -51,6 +59,7 @@ public class AppointmentService {
     }
 
     @Transactional
+    // tenant-scoped: caller may only access own tenant data
     public AppointmentResponse updateStatus(Long id, AppointmentStatusRequest request) {
         Appointment appointment = getOrThrow(id);
         appointment.setStatus(request.getStatus());
@@ -58,6 +67,10 @@ public class AppointmentService {
     }
 
     private Appointment getOrThrow(Long id) {
+        if (!authUtils.isCurrentUserSuperAdmin()) {
+            return appointmentRepository.findByIdAndTenantId(id, authUtils.getCurrentUserTenantId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Appointment", id));
+        }
         return appointmentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment", id));
     }
