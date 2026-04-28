@@ -26,6 +26,9 @@ public class AuthService {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new BadRequestException("Email already registered.");
         }
+        if (request.getTenantId() == null) {
+            throw new BadRequestException("Tenant ID is required for standard registration. SUPER_ADMIN users are created via a separate flow.");
+        }
         User user = User.builder()
                 .name(request.getName())
                 .email(request.getEmail())
