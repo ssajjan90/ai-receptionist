@@ -32,6 +32,10 @@ public class LeadService {
                 .toList();
     }
 
+    public Long getTenantIdByLeadId(Long id) {
+        return getOrThrow(id).getTenantId();
+    }
+
     @Transactional
     public LeadResponse create(LeadRequest request) {
         tenantService.getTenantOrThrow(request.getTenantId());

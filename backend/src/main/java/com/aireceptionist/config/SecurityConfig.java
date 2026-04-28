@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -16,6 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -27,23 +29,23 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/auth/**",
-                                "/actuator/health",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/refresh")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                        .permitAll()
+                        // /api/chat is intentionally public so external chat/webhook callers can invoke it without JWT.
+                        .requestMatchers(HttpMethod.POST, "/api/chat").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(
-                                "/api/admin/**",
-                                "/api/tenants/**",
-                                "/api/knowledge/**",
-                                "/api/leads/**",
-                                "/api/conversation/**",
-                                "/api/conversations/**"
-                        ).authenticated()
-                        .anyRequest().permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/tenants").hasRole("SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/tenants").hasRole("SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/tenants/*").hasRole("SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/tenants/*").hasAnyRole("SUPER_ADMIN", "TENANT_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/tenants/*").hasAnyRole("SUPER_ADMIN", "TENANT_ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/tenants/*/knowledge").hasAnyRole("SUPER_ADMIN", "TENANT_ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/knowledge/*").hasAnyRole("SUPER_ADMIN", "TENANT_ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/knowledge/*").hasAnyRole("SUPER_ADMIN", "TENANT_ADMIN")
+                        .requestMatchers("/api/**").authenticated()
+                        .anyRequest().denyAll()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

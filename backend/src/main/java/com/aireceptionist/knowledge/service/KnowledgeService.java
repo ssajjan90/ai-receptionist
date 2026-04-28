@@ -33,6 +33,10 @@ public class KnowledgeService {
                 .toList();
     }
 
+    public Long getTenantIdByKnowledgeId(Long id) {
+        return getOrThrow(id).getTenantId();
+    }
+
     public List<KnowledgeBaseResponse> findDefaultByIndustry(IndustryType industry) {
         return knowledgeBaseRepository.findByTenantIdIsNullAndIndustryAndActiveTrue(industry).stream()
                 .map(this::toResponse)
