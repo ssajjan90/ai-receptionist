@@ -4,6 +4,7 @@ import com.aireceptionist.knowledge.entity.IndustryType;
 import com.aireceptionist.knowledge.entity.KnowledgeIntent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -22,9 +23,11 @@ public class KnowledgeBaseRequest {
     private KnowledgeIntent intent;
 
     @NotBlank(message = "Question is required")
+    @Size(max = 500, message = "Question must be at most 500 characters")
     private String question;
 
     @NotBlank(message = "Answer is required")
+    @Size(max = 5000, message = "Answer must be at most 5000 characters")
     private String answer;
 
     @NotBlank(message = "Language is required")
