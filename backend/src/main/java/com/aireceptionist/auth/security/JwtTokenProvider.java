@@ -82,6 +82,17 @@ public class JwtTokenProvider {
         return parseClaims(token).get("role", String.class);
     }
 
+    public Long extractTenantId(String token) {
+        Object tenantId = parseClaims(token).get("tenantId");
+        if (tenantId instanceof Integer integer) {
+            return integer.longValue();
+        }
+        if (tenantId instanceof Long value) {
+            return value;
+        }
+        return tenantId == null ? null : Long.valueOf(tenantId.toString());
+    }
+
     public long getAccessTokenExpirationMs() {
         return accessTokenExpirationMs;
     }

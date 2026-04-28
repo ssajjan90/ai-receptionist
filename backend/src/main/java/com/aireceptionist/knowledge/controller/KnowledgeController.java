@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,12 +25,14 @@ public class KnowledgeController {
 
     @GetMapping("/api/tenants/{tenantId}/knowledge")
     @Operation(summary = "List all knowledge entries for a tenant")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == #tenantId")
     public ResponseEntity<ApiResponse<List<KnowledgeBaseResponse>>> getByTenant(@PathVariable Long tenantId) {
         return ResponseEntity.ok(ApiResponse.ok(knowledgeService.findByTenant(tenantId)));
     }
 
     @PostMapping("/api/tenants/{tenantId}/knowledge")
     @Operation(summary = "Add a knowledge entry for a tenant")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == #tenantId")
     public ResponseEntity<ApiResponse<KnowledgeBaseResponse>> createForTenant(
             @PathVariable Long tenantId,
             @Valid @RequestBody KnowledgeBaseRequest request) {
@@ -39,6 +42,7 @@ public class KnowledgeController {
 
     @PutMapping("/api/knowledge/{id}")
     @Operation(summary = "Update a knowledge entry")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == @knowledgeService.getTenantIdByKnowledgeId(#id)")
     public ResponseEntity<ApiResponse<KnowledgeBaseResponse>> update(
             @PathVariable Long id,
             @Valid @RequestBody KnowledgeBaseRequest request) {
@@ -47,6 +51,7 @@ public class KnowledgeController {
 
     @DeleteMapping("/api/knowledge/{id}")
     @Operation(summary = "Delete a knowledge entry")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == @knowledgeService.getTenantIdByKnowledgeId(#id)")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         knowledgeService.delete(id);
         return ResponseEntity.ok(ApiResponse.ok("Deleted successfully", null));
@@ -61,6 +66,7 @@ public class KnowledgeController {
 
     @GetMapping("/api/knowledge-base/tenant/{tenantId}")
     @Operation(summary = "List knowledge entries for a tenant")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == #tenantId")
     public ResponseEntity<ApiResponse<List<KnowledgeBaseResponse>>> getTenantKnowledge(@PathVariable Long tenantId) {
         return ResponseEntity.ok(ApiResponse.ok(knowledgeService.findByTenant(tenantId)));
     }

@@ -32,6 +32,10 @@ public class AppointmentService {
                 .toList();
     }
 
+    public Long getTenantIdByAppointmentId(Long id) {
+        return getOrThrow(id).getTenantId();
+    }
+
     @Transactional
     public AppointmentResponse create(AppointmentRequest request) {
         tenantService.getTenantOrThrow(request.getTenantId());

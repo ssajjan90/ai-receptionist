@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,18 +33,21 @@ public class AppointmentController {
 
     @GetMapping("/tenants/{tenantId}/appointments")
     @Operation(summary = "List appointments for a tenant")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == #tenantId")
     public ResponseEntity<ApiResponse<List<AppointmentResponse>>> getByTenant(@PathVariable Long tenantId) {
         return ResponseEntity.ok(ApiResponse.ok(appointmentService.findByTenant(tenantId)));
     }
 
     @GetMapping("/appointments/{id}")
     @Operation(summary = "Get appointment by ID")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == @appointmentService.getTenantIdByAppointmentId(#id)")
     public ResponseEntity<ApiResponse<AppointmentResponse>> getById(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.ok(appointmentService.findById(id)));
     }
 
     @PutMapping("/appointments/{id}/status")
     @Operation(summary = "Update appointment status")
+    @PreAuthorize("@authUtils.isCurrentUserSuperAdmin() or @authUtils.getCurrentUserTenantId() == @appointmentService.getTenantIdByAppointmentId(#id)")
     public ResponseEntity<ApiResponse<AppointmentResponse>> updateStatus(
             @PathVariable Long id,
             @Valid @RequestBody AppointmentStatusRequest request) {
