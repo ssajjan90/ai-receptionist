@@ -1,0 +1,32 @@
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: 0.1
+  metrics:
+    export:
+      otlp:
+        url: ${GRAFANA_OTLP_METRICS_ENDPOINT:${GRAFANA_OTLP_ENDPOINT}}
+  otlp:
+    tracing:
+      endpoint: ${GRAFANA_OTLP_ENDPOINT}
+      headers:
+        authorization: "Bearer ${GRAFANA_OTLP_TOKEN}"
+    metrics:
+      export:
+        url: ${GRAFANA_OTLP_METRICS_ENDPOINT:${GRAFANA_OTLP_ENDPOINT}}
+
+logging:
+  level:
+    root: WARN
+    com.aireceptionist: INFO
+
+app:
+  ocr:
+    provider: google

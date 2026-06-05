@@ -1,0 +1,67 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/aireceptionist
+    username: postgres
+    password: postgres
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+
+logging:
+  level:
+    com.aireceptionist: DEBUG
+
+app:
+  ocr:
+    provider: tesseract
+  jwt:
+    private-key: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDl5InK9q7Yn6rn
+      6kJn62/e+tfES7LhptRhkK+tP29nMwM1XKl/RwoXEJvX4Fjsg9L3qS/0u3q6KChu
+      3ubb0pmpKII05F37KROUsjrKVAfHADPIR/U8f2hzu2SIzSvDJek+BbllE6Ws36J8
+      eORLX2OvBrOikJckkDr+JJxQBkqMvusccIKHdti8XEoVlgwwiHcVcd1nO1NtHG85
+      SGsRZMdczoPISx+ElTGz684WUvWy0drzAQq/1TxXI3i+oCbxh2IGi3ilcdU8mY7/
+      4aKn4WJJmRrRurZtcKmCdkyCufTqKMuWEgYyPnJUgw5c38kcK+sNvRq37E9oJWRT
+      MSEcw+gBAgMBAAECggEAQGzBaM2kxjRIsuFlZrYGDdkCKpKEONSF5Cml8ck7MRKM
+      raGgJnkEDN6srdzDTtTKhHk3ZUA87npeimOREr18LnmZs7Tj2YTzZdJkw1q1K0GV
+      QWVZBnE2FmjHjcbhori3GpiEEh1laoLpiDRg1faPevdH1CDtGmQJBDvCSnLY5YP7
+      airl1Z+tQjgogFJu42Cb5joASHWR7E9FAyYUpa7khMjagLiGZefVWqXTTV9qkEsw
+      JOdmgWu4DCrdeowa8G36KVrP1uaR4q5bMQIo6zI1jfg7EpZAzduwXmjC18xL+gdX
+      IcxPQizlu8jeN1QA7zkpM1v5esSDd+7wZ+EMOiNroQKBgQD0AJt9Jbh+FWPKbWJD
+      g1iehcAFtmDCUtVw2kZk+zGKwjRvyCTxigGYzWl14kGw8cgwF1LsOZFUCP7KYewr
+      QF+FsauACpYxj0P8ng7tLuLifSAwiRcSfON8M8Hgja4CapikzmlgC/yPls7M7Ou3
+      GXsLn1US/8zLFR0tXSG34kDjrQKBgQDxMlMx7EYweZDzgniKgxlGcXLqawzha3C1
+      PgqVxWrSZQ7IoB/V9pY6Y37xtWjVP2kO9x45Kfy+S5f836Zi1OjuxJhA1vv3Z2nz
+      vVOPZptpaRd36x6IiM/iidFB8BiwwiTyKLVf1dsvlw6wxxiAsgMFrA4kHbywAJej
+      5TrQo08AJQKBgQDpInNuXc4rWhCg52aODz9rJ2xTiPBme3LIgyXjckbhx7EGZPs3
+      dZ8U+p8bLXWKtVmK6Z4natG6s2WOxYU7xiP+v8WXb4YWEEbrZbHpWXUa5mcNOM88
+      sOtCTsmd3oE2edcjEL2KMam9IGCzWGPX7JaugixtHM/18lSQdX20Do/leQKBgGhi
+      ekTx15KlGgl5Hsf7YtXsxWoUeFeakwWtWxFkhg2WNOa4/e4wsOWGJ+tdsogP0Fzs
+      sATXWg3VU2raM/0z3bdwF+B/6j4xYFZfSqmWI45kMAbzF5zJcQa+1HRv/4+IBktT
+      OOPH/vtCqdXx5HXWFJ7AzsHsqLuXFgmVbHXdJ5SNAoGBAMm0XqFOXjRNHFOb+IVz
+      yBoPl62OmTEqnP8IqqmzcVm2uei7x9UPbwkW8JBUGtjT8fSypopXkJHooEhHP5aw
+      3vGFj1GdcTByxl5N0uuJzjBaxoKBaneGXq5SgfhtHlD1nfz2su9E9uUMaWMehvrK
+      duLmxJ6O1VUq8L5eh/lBtCUN
+      -----END PRIVATE KEY-----
+    public-key: |
+      -----BEGIN PUBLIC KEY-----
+      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5eSJyvau2J+q5+pCZ+tv
+      3vrXxEuy4abUYZCvrT9vZzMDNVypf0cKFxCb1+BY7IPS96kv9Lt6uigobt7m29KZ
+      qSiCNORd+ykTlLI6ylQHxwAzyEf1PH9oc7tkiM0rwyXpPgW5ZROlrN+ifHjkS19j
+      rwazopCXJJA6/iScUAZKjL7rHHCCh3bYvFxKFZYMMIh3FXHdZztTbRxvOUhrEWTH
+      XM6DyEsfhJUxs+vOFlL1stHa8wEKv9U8VyN4vqAm8YdiBot4pXHVPJmO/+Gip+Fi
+      SZka0bq2bXCpgnZMgrn06ijLlhIGMj5yVIMOXN/JHCvrDb0at+xPaCVkUzEhHMPo
+      AQIDAQAB
+      -----END PUBLIC KEY-----
