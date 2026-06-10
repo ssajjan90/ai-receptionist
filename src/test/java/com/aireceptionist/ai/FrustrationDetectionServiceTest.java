@@ -57,7 +57,7 @@ class FrustrationDetectionServiceTest {
 
     @Test
     void allCapsWithFiveWordsIsFrustrated() {
-        assertThat(service.isFrustrated("THIS IS COMPLETELY WRONG AND FRAUD")).isTrue();
+        assertThat(service.isFrustrated("STOP EATING ALL THE DONUTS TODAY")).isTrue();
     }
 
     @Test

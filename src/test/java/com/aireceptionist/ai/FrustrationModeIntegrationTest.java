@@ -5,6 +5,7 @@ import com.aireceptionist.common.ai.AiChatPort;
 import com.aireceptionist.common.ai.AiResponseResult;
 import com.aireceptionist.whatsapp.domain.MessageDirection;
 import com.aireceptionist.whatsapp.domain.WhatsAppMessage;
+import com.aireceptionist.whatsapp.event.FrustrationDetectedEvent;
 import com.aireceptionist.whatsapp.event.InboundWhatsAppMessageEvent;
 import com.aireceptionist.whatsapp.repository.WhatsAppMessageRepository;
 import org.junit.jupiter.api.Test;
@@ -14,7 +15,11 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -24,11 +29,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
+@RecordApplicationEvents
 class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired WhatsAppMessageRepository messageRepository;
     @Autowired StringRedisTemplate redisTemplate;
+    @Autowired ApplicationEvents applicationEvents;
 
     static final AtomicReference<String> capturedSystemPrompt = new AtomicReference<>("");
 
@@ -57,6 +64,9 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
             List<WhatsAppMessage> outbound = outboundFor(tenantId);
             assertThat(outbound).hasSize(1);
             assertThat(capturedSystemPrompt.get()).contains("frustrated");
+            assertThat(applicationEvents.stream(FrustrationDetectedEvent.class).count()).isGreaterThan(0);
+            assertThat(redisTemplate.opsForValue().get(
+                    "conv:" + tenantId + ":" + sha256(phone) + ":mode")).isEqualTo("EMPATHY");
         });
     }
 
@@ -105,5 +115,17 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
                 .filter(m -> m.getTenantId().equals(tenantId)
                         && m.getDirection() == MessageDirection.OUTBOUND)
                 .toList();
+    }
+
+    private static String sha256(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return hex.toString();
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
     }
 }

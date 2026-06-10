@@ -6,8 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-
 @Service
 public class LanguageDetectionService {
 
@@ -19,7 +17,7 @@ public class LanguageDetectionService {
         LanguageDetector d = null;
         try {
             d = new OptimaizeLangDetector().loadModels();
-        } catch (IOException ex) {
+        } catch (Exception ex) {
             log.error("Failed to load language detection models — all messages will default to ENGLISH: {}", ex.getMessage());
         }
         this.detector = d;

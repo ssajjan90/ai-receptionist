@@ -2,11 +2,14 @@ package com.aireceptionist.knowledgebase.event;
 
 import com.aireceptionist.common.event.AiReceptionistEvent;
 
+import java.time.Instant;
+
 public class UnansweredQueryFlaggedEvent extends AiReceptionistEvent {
 
     private final String customerPhone;
     private final String originalQuery;
     private final String ownerPhone;
+    private final Instant occurredAt;
 
     public UnansweredQueryFlaggedEvent(String tenantId, String customerPhone,
                                        String originalQuery, String ownerPhone) {
@@ -14,6 +17,7 @@ public class UnansweredQueryFlaggedEvent extends AiReceptionistEvent {
         this.customerPhone = customerPhone;
         this.originalQuery = originalQuery;
         this.ownerPhone = ownerPhone;
+        this.occurredAt = Instant.now();
     }
 
     public String getCustomerPhone() {
@@ -26,5 +30,9 @@ public class UnansweredQueryFlaggedEvent extends AiReceptionistEvent {
 
     public String getOwnerPhone() {
         return ownerPhone;
+    }
+
+    public Instant getOccurredAt() {
+        return occurredAt;
     }
 }

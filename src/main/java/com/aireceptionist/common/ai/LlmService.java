@@ -98,7 +98,7 @@ public class LlmService {
         return new AiResponseResult(fallbackProvider.getFallbackResponse(tenantId, cause), 0.0, true);
     }
 
-    @AiResponse(eventType = "QUERY_RESPONSE")
+    @AiResponse(eventType = "EMPATHY_RESPONSE")
     @CircuitBreaker(name = "llmService", fallbackMethod = "generateEmpathyResponseFallback")
     public AiResponseResult generateEmpathyResponse(String tenantId, String businessName, String query,
                                                      String customerPhone, Language language) {

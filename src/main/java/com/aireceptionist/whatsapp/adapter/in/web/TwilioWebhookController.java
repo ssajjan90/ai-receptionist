@@ -5,6 +5,7 @@ import com.aireceptionist.tenant.port.in.ResolveTenantByWhatsAppPhoneUseCase;
 import com.aireceptionist.tenant.port.in.ResolvedTenantWhatsAppRoute;
 import com.aireceptionist.whatsapp.event.InboundWhatsAppMessageEvent;
 import com.aireceptionist.whatsapp.event.OwnerCommandReceivedEvent;
+import com.aireceptionist.whatsapp.service.WhatsAppNotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -27,14 +28,20 @@ import java.time.Instant;
 public class TwilioWebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(TwilioWebhookController.class);
+    private static final java.util.regex.Pattern OWNER_CMD_PATTERN =
+            java.util.regex.Pattern.compile("^(?:ADD FAQ:|ADD:|UPDATE:|DELETE:).*",
+                    java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.DOTALL);
 
     private final ResolveTenantByWhatsAppPhoneUseCase resolveTenantByWhatsAppPhoneUseCase;
     private final ApplicationEventPublisher eventPublisher;
+    private final WhatsAppNotificationService notificationService;
 
     public TwilioWebhookController(ResolveTenantByWhatsAppPhoneUseCase resolveTenantByWhatsAppPhoneUseCase,
-                                   ApplicationEventPublisher eventPublisher) {
+                                   ApplicationEventPublisher eventPublisher,
+                                   WhatsAppNotificationService notificationService) {
         this.resolveTenantByWhatsAppPhoneUseCase = resolveTenantByWhatsAppPhoneUseCase;
         this.eventPublisher = eventPublisher;
+        this.notificationService = notificationService;
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -61,8 +68,14 @@ public class TwilioWebhookController {
             eventPublisher.publishEvent(new OwnerCommandReceivedEvent(
                     resolved.tenantId().toString(), body, fromPhone, Instant.now()));
         } else {
-            eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
-                    resolved.tenantId(), messageSid, fromPhone, body, toPhone, Instant.now()));
+            String trimmed = body != null ? body.trim() : "";
+            if (!trimmed.isEmpty() && OWNER_CMD_PATTERN.matcher(trimmed).matches()) {
+                notificationService.sendMessage(
+                        resolved.tenantId().toString(), fromPhone, "Unauthorised command.");
+            } else {
+                eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+                        resolved.tenantId(), messageSid, fromPhone, body, toPhone, Instant.now()));
+            }
         }
 
         return ResponseEntity.ok().build();

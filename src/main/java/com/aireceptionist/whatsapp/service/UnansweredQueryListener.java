@@ -18,7 +18,7 @@ public class UnansweredQueryListener {
     }
 
     @ApplicationModuleListener
-    void onUnansweredQuery(UnansweredQueryFlaggedEvent event) {
+    public void onUnansweredQuery(UnansweredQueryFlaggedEvent event) {
         if (event.getOwnerPhone() == null) {
             log.info("Unanswered query flagged for tenant {} but no owner phone on record — skipping notification",
                     event.getTenantId());

@@ -153,12 +153,8 @@ public class AiConfidenceGateAspect {
     }
 
     private String hashQuery(Object[] args) {
-        String query = "";
-        for (Object arg : args) {
-            if (arg instanceof String value && !isUuid(value)) {
-                query = value;
-            }
-        }
+        List<String> stringArgs = extractStringArgs(args);
+        String query = stringArgs.size() > 2 ? stringArgs.get(2) : "";
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(query.getBytes(StandardCharsets.UTF_8)));

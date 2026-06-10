@@ -38,6 +38,7 @@ public class ConversationContextService {
             redisTemplate.opsForList().rightPush(key, json);
             redisTemplate.opsForList().trim(key, -MAX_LIST_SIZE, -1);
             redisTemplate.expire(key, TTL);
+            redisTemplate.expire(key + MODE_SUFFIX, TTL);
         } catch (JsonProcessingException ex) {
             log.warn("Failed to serialize conversation turn for tenant={}: {}", tenantId, ex.getMessage());
         }

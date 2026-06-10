@@ -6,6 +6,7 @@ import com.aireceptionist.tenant.port.in.ResolvedTenantWhatsAppRoute;
 import com.aireceptionist.whatsapp.adapter.in.web.dto.WhatsAppWebhookPayload;
 import com.aireceptionist.whatsapp.event.InboundWhatsAppMessageEvent;
 import com.aireceptionist.whatsapp.event.OwnerCommandReceivedEvent;
+import com.aireceptionist.whatsapp.service.WhatsAppNotificationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -35,23 +36,29 @@ public class WhatsAppWebhookController {
 
     private static final Logger log = LoggerFactory.getLogger(WhatsAppWebhookController.class);
     private static final String SIGNATURE_HEADER = "X-Hub-Signature-256";
+    private static final java.util.regex.Pattern OWNER_CMD_PATTERN =
+            java.util.regex.Pattern.compile("^(?:ADD FAQ:|ADD:|UPDATE:|DELETE:).*",
+                    java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.DOTALL);
 
     private final String verifyToken;
     private final String appSecret;
     private final ObjectMapper objectMapper;
     private final ResolveTenantByWhatsAppPhoneUseCase resolveTenantByWhatsAppPhoneUseCase;
     private final ApplicationEventPublisher eventPublisher;
+    private final WhatsAppNotificationService notificationService;
 
     public WhatsAppWebhookController(@Value("${app.whatsapp.verify-token}") String verifyToken,
                                      @Value("${app.whatsapp.app-secret}") String appSecret,
                                      ObjectMapper objectMapper,
                                      ResolveTenantByWhatsAppPhoneUseCase resolveTenantByWhatsAppPhoneUseCase,
-                                     ApplicationEventPublisher eventPublisher) {
+                                     ApplicationEventPublisher eventPublisher,
+                                     WhatsAppNotificationService notificationService) {
         this.verifyToken = verifyToken;
         this.appSecret = appSecret;
         this.objectMapper = objectMapper;
         this.resolveTenantByWhatsAppPhoneUseCase = resolveTenantByWhatsAppPhoneUseCase;
         this.eventPublisher = eventPublisher;
+        this.notificationService = notificationService;
     }
 
     @GetMapping(produces = MediaType.TEXT_PLAIN_VALUE)
@@ -103,8 +110,14 @@ public class WhatsAppWebhookController {
                             eventPublisher.publishEvent(new OwnerCommandReceivedEvent(
                                     resolved.tenantId().toString(), messageText, message.from(), now));
                         } else {
-                            eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
-                                    resolved.tenantId(), message.id(), message.from(), messageText, phoneNumberId, now));
+                            String trimmed = messageText != null ? messageText.trim() : "";
+                            if (!trimmed.isEmpty() && OWNER_CMD_PATTERN.matcher(trimmed).matches()) {
+                                notificationService.sendMessage(
+                                        resolved.tenantId().toString(), message.from(), "Unauthorised command.");
+                            } else {
+                                eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+                                        resolved.tenantId(), message.id(), message.from(), messageText, phoneNumberId, now));
+                            }
                         }
                     }
                 } finally {

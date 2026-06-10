@@ -94,6 +94,19 @@ public class KnowledgeEntry {
         this.updatedAt = Instant.now();
     }
 
+    public void updateFaq(String answer, String source) {
+        this.answer = answer;
+        this.source = source;
+        this.updatedAt = Instant.now();
+    }
+
+    public static KnowledgeEntry faq(UUID tenantId, String question, String answer, String source) {
+        KnowledgeEntry entry = new KnowledgeEntry(tenantId, EntryType.FAQ, source);
+        entry.question = question;
+        entry.answer = answer;
+        return entry;
+    }
+
     @PrePersist
     void prePersist() {
         Instant now = Instant.now();

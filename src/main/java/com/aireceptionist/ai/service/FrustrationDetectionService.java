@@ -5,15 +5,14 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
 public class FrustrationDetectionService {
 
-    private static final Set<String> FRUSTRATION_KEYWORDS = Set.of(
-            "cheated", "wrong", "refund", "complain", "useless", "lied", "fraud", "disappointed"
-    );
+    private static final Pattern FRUSTRATION_KEYWORD_PATTERN = Pattern.compile(
+            "\\b(?:cheated|wrong|refund|complain|useless|lied|fraud|disappointed)\\b",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern REPEATED_PUNCTUATION = Pattern.compile("[!?]{3,}");
 
     public boolean isFrustrated(String messageText) {
@@ -31,8 +30,7 @@ public class FrustrationDetectionService {
     }
 
     private boolean hasKeyword(String text) {
-        String lower = text.toLowerCase();
-        return FRUSTRATION_KEYWORDS.stream().anyMatch(lower::contains);
+        return FRUSTRATION_KEYWORD_PATTERN.matcher(text).find();
     }
 
     private boolean hasRepeatedPunctuation(String text) {
@@ -45,7 +43,7 @@ public class FrustrationDetectionService {
                 .toList();
         if (significant.size() < 5) return false;
         long capsCount = significant.stream()
-                .filter(w -> w.equals(w.toUpperCase()) && w.chars().anyMatch(Character::isLetter))
+                .filter(w -> w.equals(w.toUpperCase()) && w.chars().anyMatch(c -> c < 128 && Character.isLetter((char) c)))
                 .count();
         return (double) capsCount / significant.size() >= 0.80;
     }

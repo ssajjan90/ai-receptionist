@@ -3,6 +3,7 @@ package com.aireceptionist.knowledgebase.service;
 import com.aireceptionist.knowledgebase.domain.EntryType;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
 import com.aireceptionist.knowledgebase.event.KnowledgeEntryAddedEvent;
+import com.aireceptionist.knowledgebase.event.KnowledgeEntryDeletedEvent;
 import com.aireceptionist.knowledgebase.repository.KnowledgeEntryRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,6 +35,8 @@ public class KnowledgeBaseService {
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseService.class);
     private static final String WIZARD_SOURCE = "WIZARD";
     private static final String OCR_SOURCE = "OCR";
+    private static final String OWNER_COMMAND_SOURCE = "OWNER_COMMAND";
+    private static final String KB_PUBSUB_CHANNEL_PREFIX = "kb:update:";
     private static final Set<String> STOP_WORDS = Set.of(
             "what", "is", "the", "a", "an", "how", "much", "price", "of", "are", "does", "do",
             "i", "me", "my", "we", "you", "it", "this", "that", "for", "in", "on", "at", "to"
@@ -197,6 +200,50 @@ public class KnowledgeBaseService {
             log.debug("Failed to cache KB search results: {}", ex.getMessage());
         }
         return results;
+    }
+
+    public void addOrUpdateProduct(UUID tenantId, String productName, String price) {
+        KnowledgeEntry entry = repository.findByTenantIdAndTypeAndProductName(tenantId, EntryType.PRODUCT, productName)
+                .map(existing -> {
+                    existing.updateProduct(price, OWNER_COMMAND_SOURCE);
+                    return existing;
+                })
+                .orElseGet(() -> KnowledgeEntry.product(tenantId, productName, price, OWNER_COMMAND_SOURCE));
+        repository.save(entry);
+        eventPublisher.publishEvent(new KnowledgeEntryAddedEvent(tenantId, 1));
+        publishKbUpdateEvent(tenantId.toString());
+        log.info("KB product upserted via owner command: '{}' → '{}', tenant={}", productName, price, tenantId);
+    }
+
+    public void addOrUpdateFaq(UUID tenantId, String question, String answer) {
+        KnowledgeEntry entry = repository.findByTenantIdAndTypeAndQuestion(tenantId, EntryType.FAQ, question)
+                .orElseGet(() -> KnowledgeEntry.faq(tenantId, question, answer, OWNER_COMMAND_SOURCE));
+        entry.updateFaq(answer, OWNER_COMMAND_SOURCE);
+        repository.save(entry);
+        eventPublisher.publishEvent(new KnowledgeEntryAddedEvent(tenantId, 1));
+        publishKbUpdateEvent(tenantId.toString());
+        log.info("KB FAQ upserted via owner command: '{}', tenant={}", question, tenantId);
+    }
+
+    public boolean deleteEntry(UUID tenantId, String productName) {
+        return repository.findByTenantIdAndTypeAndProductName(tenantId, EntryType.PRODUCT, productName)
+                .map(entry -> {
+                    UUID entryId = entry.getId();
+                    repository.delete(entry);
+                    eventPublisher.publishEvent(new KnowledgeEntryDeletedEvent(tenantId.toString(), productName, entryId));
+                    publishKbUpdateEvent(tenantId.toString());
+                    log.info("KB entry deleted via owner command: '{}', tenant={}", productName, tenantId);
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    private void publishKbUpdateEvent(String tenantId) {
+        try {
+            redisTemplate.convertAndSend(KB_PUBSUB_CHANNEL_PREFIX + tenantId, "INVALIDATE");
+        } catch (Exception ex) {
+            log.warn("Failed to publish KB update event for tenant={}: {}", tenantId, ex.getMessage());
+        }
     }
 
     private String sha256(String input) {

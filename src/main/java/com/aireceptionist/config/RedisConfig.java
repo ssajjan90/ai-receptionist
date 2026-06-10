@@ -1,5 +1,6 @@
 package com.aireceptionist.config;
 
+import com.aireceptionist.knowledgebase.service.KnowledgeCacheService;
 import io.github.bucket4j.distributed.ExpirationAfterWriteStrategy;
 import io.github.bucket4j.redis.lettuce.cas.LettuceBasedProxyManager;
 import io.lettuce.core.RedisClient;
@@ -14,6 +15,8 @@ import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.listener.PatternTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
@@ -69,5 +72,19 @@ public class RedisConfig {
                         ExpirationAfterWriteStrategy.basedOnTimeForRefillingBucketUpToMax(
                                 Duration.ofMinutes(10)))
                 .build();
+    }
+
+    @Bean
+    public PatternTopic kbUpdateTopic() {
+        return new PatternTopic("kb:update:*");
+    }
+
+    @Bean(destroyMethod = "destroy")
+    public RedisMessageListenerContainer kbUpdateListenerContainer(RedisConnectionFactory connectionFactory,
+                                                                    KnowledgeCacheService knowledgeCacheService) {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        container.addMessageListener(knowledgeCacheService, kbUpdateTopic());
+        return container;
     }
 }

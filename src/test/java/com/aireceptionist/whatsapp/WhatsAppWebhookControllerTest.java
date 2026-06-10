@@ -35,12 +35,15 @@ class WhatsAppWebhookControllerTest {
 
     private final ResolveTenantByWhatsAppPhoneUseCase resolver = mock(ResolveTenantByWhatsAppPhoneUseCase.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final com.aireceptionist.whatsapp.service.WhatsAppNotificationService notificationService =
+            mock(com.aireceptionist.whatsapp.service.WhatsAppNotificationService.class);
     private final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new WhatsAppWebhookController(
             "verify-token",
             APP_SECRET,
             new ObjectMapper(),
             resolver,
-            eventPublisher
+            eventPublisher,
+            notificationService
     )).build();
 
     @Test

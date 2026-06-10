@@ -20,6 +20,10 @@ public class FrustrationEventListener {
         this.notificationService = notificationService;
     }
 
+    private static String sanitize(String s) {
+        return s == null ? "" : s.replaceAll("[\n\r\t]", " ");
+    }
+
     @ApplicationModuleListener
     void onFrustrationDetected(FrustrationDetectedEvent event) {
         if (event.getOwnerPhone() == null) {
@@ -35,8 +39,8 @@ public class FrustrationEventListener {
                 .collect(Collectors.joining("\n"));
 
         String message = "🚨 Frustrated customer alert!\n"
-                + "Customer: " + event.getCustomerPhone() + "\n"
-                + "Message: \"" + event.getTriggerMessage() + "\"\n\n"
+                + "Customer: " + sanitize(event.getCustomerPhone()) + "\n"
+                + "Message: \"" + sanitize(event.getTriggerMessage()) + "\"\n\n"
                 + "Recent conversation:\n" + lastTurns;
 
         try {
