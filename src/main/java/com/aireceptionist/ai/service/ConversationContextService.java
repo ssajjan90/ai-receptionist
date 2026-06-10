@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.List;
 
@@ -16,7 +18,10 @@ public class ConversationContextService {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationContextService.class);
     private static final String KEY_PREFIX = "conv:";
+    private static final String LANG_SUFFIX = ":lang";
+    private static final String MODE_SUFFIX = ":mode";
     private static final Duration TTL = Duration.ofSeconds(1800);
+    private static final int MAX_LIST_SIZE = 200;
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -31,6 +36,7 @@ public class ConversationContextService {
         try {
             String json = objectMapper.writeValueAsString(new ConversationTurn(role, content));
             redisTemplate.opsForList().rightPush(key, json);
+            redisTemplate.opsForList().trim(key, -MAX_LIST_SIZE, -1);
             redisTemplate.expire(key, TTL);
         } catch (JsonProcessingException ex) {
             log.warn("Failed to serialize conversation turn for tenant={}: {}", tenantId, ex.getMessage());
@@ -56,7 +62,49 @@ public class ConversationContextService {
                 .toList();
     }
 
+    public void setSessionLanguage(String tenantId, String customerPhone, String languageCode) {
+        String key = key(tenantId, customerPhone) + LANG_SUFFIX;
+        try {
+            redisTemplate.opsForValue().set(key, languageCode, TTL);
+        } catch (Exception ex) {
+            log.warn("Failed to store session language for tenant={}: {}", tenantId, ex.getMessage());
+        }
+    }
+
+    public void setEmpathyMode(String tenantId, String customerPhone) {
+        String key = key(tenantId, customerPhone) + MODE_SUFFIX;
+        try {
+            redisTemplate.opsForValue().set(key, "EMPATHY", TTL);
+        } catch (Exception ex) {
+            log.warn("Failed to store empathy mode for tenant={}: {}", tenantId, ex.getMessage());
+        }
+    }
+
+    public boolean isEmpathyMode(String tenantId, String customerPhone) {
+        String key = key(tenantId, customerPhone) + MODE_SUFFIX;
+        try {
+            return "EMPATHY".equals(redisTemplate.opsForValue().get(key));
+        } catch (Exception ex) {
+            log.warn("Failed to check empathy mode for tenant={}: {}", tenantId, ex.getMessage());
+            return false;
+        }
+    }
+
     private String key(String tenantId, String customerPhone) {
-        return KEY_PREFIX + tenantId + ":" + customerPhone;
+        return KEY_PREFIX + tenantId + ":" + sha256(customerPhone);
+    }
+
+    private String sha256(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (Exception ex) {
+            throw new RuntimeException("SHA-256 is unavailable", ex);
+        }
     }
 }

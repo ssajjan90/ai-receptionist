@@ -15,16 +15,25 @@ public class LanguageDetectionService {
 
     private final LanguageDetector detector;
 
-    public LanguageDetectionService() throws IOException {
-        this.detector = new OptimaizeLangDetector().loadModels();
+    public LanguageDetectionService() {
+        LanguageDetector d = null;
+        try {
+            d = new OptimaizeLangDetector().loadModels();
+        } catch (IOException ex) {
+            log.error("Failed to load language detection models — all messages will default to ENGLISH: {}", ex.getMessage());
+        }
+        this.detector = d;
     }
 
-    public Language detectLanguage(String text) {
+    public synchronized Language detectLanguage(String text) {
         if (text == null || text.isBlank()) {
             return Language.ENGLISH;
         }
         if (isHinglish(text)) {
             return Language.HINGLISH;
+        }
+        if (detector == null) {
+            return Language.ENGLISH;
         }
         try {
             String langCode = detector.detect(text).getLanguage();

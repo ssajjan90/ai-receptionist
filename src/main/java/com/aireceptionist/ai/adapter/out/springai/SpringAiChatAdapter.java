@@ -3,6 +3,7 @@ package com.aireceptionist.ai.adapter.out.springai;
 import com.aireceptionist.common.ai.AiChatPort;
 import com.aireceptionist.common.ai.AiResponseResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +45,14 @@ public class SpringAiChatAdapter implements AiChatPort {
         this.apiBaseUrl = apiBaseUrl;
     }
 
+    @PostConstruct
+    void validateConfiguration() {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "OpenAI API key is not configured. Set spring.ai.openai.api-key in application properties.");
+        }
+    }
+
     @Override
     public AiResponseResult chat(String systemPrompt, String userMessage) {
         HttpHeaders headers = new HttpHeaders();
@@ -68,7 +77,7 @@ public class SpringAiChatAdapter implements AiChatPort {
             );
             return parseOpenAiResponse(response);
         } catch (Exception ex) {
-            log.warn("OpenAI API call failed: {}", ex.getMessage());
+            log.warn("OpenAI API call failed: {}", ex.getClass().getSimpleName());
             return new AiResponseResult("I'm unable to process that right now.", FALLBACK_CONFIDENCE);
         }
     }
@@ -96,9 +105,33 @@ public class SpringAiChatAdapter implements AiChatPort {
         if (content == null || content.isBlank()) {
             return new AiResponseResult("Empty AI content.", FALLBACK_CONFIDENCE);
         }
+        // Try direct JSON parse first (clean LLM output)
         try {
-            int start = content.indexOf('{');
-            int end = content.lastIndexOf('}');
+            LlmResponsePayload payload = objectMapper.readValue(content.trim(), LlmResponsePayload.class);
+            if (payload.response() != null && !payload.response().isBlank()) {
+                return new AiResponseResult(payload.response(), payload.confidence());
+            }
+        } catch (Exception ex) {
+            // not clean JSON — scan for embedded object
+        }
+        // Extract outermost JSON object using brace-depth counting (handles nested JSON in response field)
+        try {
+            int depth = 0;
+            int start = -1;
+            int end = -1;
+            for (int i = 0; i < content.length(); i++) {
+                char c = content.charAt(i);
+                if (c == '{') {
+                    if (depth == 0) start = i;
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        end = i;
+                        break;
+                    }
+                }
+            }
             if (start >= 0 && end > start) {
                 LlmResponsePayload payload = objectMapper.readValue(
                         content.substring(start, end + 1), LlmResponsePayload.class);

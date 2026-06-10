@@ -10,6 +10,7 @@ import com.aireceptionist.common.ai.LlmService;
 import com.aireceptionist.common.resilience.FallbackMessageProvider;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
 import com.aireceptionist.knowledgebase.service.KnowledgeBaseService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +42,8 @@ class LlmServiceTest {
     @Mock StringRedisTemplate redisTemplate;
     @Mock ValueOperations<String, String> valueOps;
 
+    private final ObjectMapper testObjectMapper = new ObjectMapper();
+
     private LlmService llmService;
     private final String tenantId = UUID.randomUUID().toString();
 
@@ -48,17 +51,19 @@ class LlmServiceTest {
     void setUp() {
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
         llmService = new LlmService(aiChatPort, knowledgeBaseService, conversationContextService,
-                promptAssembler, fallbackProvider, redisTemplate, 5);
+                promptAssembler, fallbackProvider, redisTemplate, testObjectMapper, 5);
     }
 
     @Test
     void cacheHitSkipsLlmCall() {
-        when(valueOps.get(anyString())).thenReturn("cached answer");
+        when(valueOps.get(anyString())).thenReturn(
+                "{\"response\":\"cached answer\",\"confidence\":0.88,\"flaggedForReview\":false}");
 
-        AiResponseResult result = llmService.generateResponse(tenantId, "price of iphone", "phone", Language.ENGLISH);
+        AiResponseResult result = llmService.generateResponse(
+                tenantId, "TestBiz", "price of iphone", "phone", Language.ENGLISH);
 
         assertThat(result.response()).isEqualTo("cached answer");
-        assertThat(result.confidence()).isEqualTo(1.0);
+        assertThat(result.confidence()).isEqualTo(0.88);
         verify(aiChatPort, never()).chat(anyString(), anyString());
         verify(knowledgeBaseService, never()).search(any(), anyString());
     }
@@ -74,7 +79,8 @@ class LlmServiceTest {
         when(aiChatPort.chat("system", "user msg"))
                 .thenReturn(new AiResponseResult("iPhone is ₹72000", 0.92));
 
-        AiResponseResult result = llmService.generateResponse(tenantId, "price?", "phone", Language.ENGLISH);
+        AiResponseResult result = llmService.generateResponse(
+                tenantId, "TestBiz", "price?", "phone", Language.ENGLISH);
 
         assertThat(result.response()).isEqualTo("iPhone is ₹72000");
         assertThat(result.confidence()).isEqualTo(0.92);
@@ -90,7 +96,7 @@ class LlmServiceTest {
         when(promptAssembler.buildUserMessage(any(), anyString())).thenReturn("msg");
         when(aiChatPort.chat(anyString(), anyString())).thenReturn(new AiResponseResult("ok", 0.9));
 
-        llmService.generateResponse(tenantId, "query", "phone", Language.HINGLISH);
+        llmService.generateResponse(tenantId, "TestBiz", "query", "phone", Language.HINGLISH);
 
         verify(promptAssembler).buildSystemPrompt(anyString(), any(List.class), any(Language.class));
     }
@@ -99,7 +105,6 @@ class LlmServiceTest {
     void fallbackProviderResponseIsLowConfidenceAndFlagged() {
         when(fallbackProvider.getFallbackResponse(anyString(), any())).thenReturn("fallback");
 
-        // Verify FallbackMessageProvider produces a flagged low-confidence result
         AiResponseResult result = new AiResponseResult(
                 fallbackProvider.getFallbackResponse(tenantId, new RuntimeException("LLM down")),
                 0.0,

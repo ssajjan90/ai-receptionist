@@ -48,6 +48,10 @@ public class WhatsAppMessage {
     @Column(name = "language")
     private String language;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_status")
+    private DeliveryStatus deliveryStatus;
+
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
 
@@ -76,6 +80,7 @@ public class WhatsAppMessage {
         msg.content = content == null ? "" : content;
         msg.confidenceScore = BigDecimal.valueOf(confidence);
         msg.language = language;
+        msg.deliveryStatus = DeliveryStatus.PENDING;
         return msg;
     }
 
@@ -142,5 +147,17 @@ public class WhatsAppMessage {
 
     public void setLanguage(String language) {
         this.language = language;
+    }
+
+    public DeliveryStatus getDeliveryStatus() {
+        return deliveryStatus;
+    }
+
+    public void markSent() {
+        this.deliveryStatus = DeliveryStatus.SENT;
+    }
+
+    public void markFailed() {
+        this.deliveryStatus = DeliveryStatus.FAILED;
     }
 }

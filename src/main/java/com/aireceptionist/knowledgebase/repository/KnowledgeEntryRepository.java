@@ -35,8 +35,8 @@ public interface KnowledgeEntryRepository extends JpaRepository<KnowledgeEntry, 
     void deleteByTenantId(UUID tenantId);
 
     @Query("SELECT e FROM KnowledgeEntry e WHERE e.tenantId = :tenantId AND " +
-           "(LOWER(COALESCE(e.productName, '')) LIKE LOWER(:pattern) OR " +
-           " LOWER(COALESCE(e.question, '')) LIKE LOWER(:pattern) OR " +
-           " LOWER(COALESCE(e.answer, '')) LIKE LOWER(:pattern))")
+           "(LOWER(COALESCE(e.productName, '')) LIKE LOWER(:pattern) ESCAPE '!' OR " +
+           " LOWER(COALESCE(e.question, '')) LIKE LOWER(:pattern) ESCAPE '!' OR " +
+           " LOWER(COALESCE(e.answer, '')) LIKE LOWER(:pattern) ESCAPE '!')")
     List<KnowledgeEntry> searchByKeyword(@Param("tenantId") UUID tenantId, @Param("pattern") String pattern);
 }

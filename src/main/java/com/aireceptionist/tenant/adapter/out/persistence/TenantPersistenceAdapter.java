@@ -1,5 +1,7 @@
 package com.aireceptionist.tenant.adapter.out.persistence;
 
+import com.aireceptionist.common.ai.TenantNamePort;
+import com.aireceptionist.common.ai.TenantOwnerPhonePort;
 import com.aireceptionist.tenant.domain.BusinessTenant;
 import com.aireceptionist.tenant.domain.TenantStatus;
 import com.aireceptionist.tenant.port.out.TenantRegistrationRepository;
@@ -10,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Component
-public class TenantPersistenceAdapter implements TenantRegistrationRepository {
+public class TenantPersistenceAdapter implements TenantRegistrationRepository, TenantNamePort, TenantOwnerPhonePort {
 
     private final JpaTenantRepository repository;
 
@@ -58,5 +60,27 @@ public class TenantPersistenceAdapter implements TenantRegistrationRepository {
         return repository.findAllByStatus(status).stream()
                 .map(BusinessTenantJpaEntity::toDomain)
                 .toList();
+    }
+
+    @Override
+    public Optional<String> getBusinessName(String tenantId) {
+        try {
+            return repository.findById(UUID.fromString(tenantId))
+                    .map(BusinessTenantJpaEntity::toDomain)
+                    .map(BusinessTenant::getBusinessName);
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public Optional<String> getOwnerPhone(String tenantId) {
+        try {
+            return repository.findById(UUID.fromString(tenantId))
+                    .map(BusinessTenantJpaEntity::toDomain)
+                    .map(BusinessTenant::getOwnerPhone);
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
+        }
     }
 }

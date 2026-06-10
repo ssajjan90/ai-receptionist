@@ -15,7 +15,7 @@ public class PromptAssembler {
 
     public String buildSystemPrompt(String businessName, List<KnowledgeEntry> kbContext, Language language) {
         StringBuilder sb = new StringBuilder();
-        sb.append("You are the AI receptionist for ").append(businessName).append(". ");
+        sb.append("You are the AI receptionist for ").append(sanitize(businessName)).append(". ");
         sb.append("Answer only based on the provided knowledge base. ");
         sb.append("Always respond in ").append(language.toDisplayName()).append(". ");
         sb.append("If you are not confident (less than 75% sure), set confidence below 0.75 in your JSON response.");
@@ -28,9 +28,43 @@ public class PromptAssembler {
             sb.append("\n\nKnowledge Base:\n");
             for (KnowledgeEntry entry : kbContext) {
                 if (entry.getProductName() != null && entry.getPrice() != null) {
-                    sb.append("- ").append(entry.getProductName()).append(": ₹").append(entry.getPrice()).append("\n");
+                    sb.append("- ").append(sanitize(entry.getProductName()))
+                      .append(": ₹").append(sanitize(entry.getPrice())).append("\n");
                 } else if (entry.getQuestion() != null && entry.getAnswer() != null) {
-                    sb.append("Q: ").append(entry.getQuestion()).append("\nA: ").append(entry.getAnswer()).append("\n");
+                    sb.append("Q: ").append(sanitize(entry.getQuestion()))
+                      .append("\nA: ").append(sanitize(entry.getAnswer())).append("\n");
+                }
+            }
+        }
+
+        sb.append("\n\n").append(JSON_FORMAT_INSTRUCTION);
+        return sb.toString();
+    }
+
+    private String sanitize(String value) {
+        if (value == null) return "";
+        return value.replaceAll("[\\n\\r]", " ").replaceAll("[\\x00-\\x1F\\x7F]", "");
+    }
+
+    public String buildEmpathySystemPrompt(String businessName, List<KnowledgeEntry> kbContext, Language language) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("You are the empathetic receptionist for ").append(sanitize(businessName)).append(". ");
+        sb.append("The customer is frustrated. Your response must: ");
+        sb.append("1) Acknowledge their frustration sincerely, ");
+        sb.append("2) Apologise genuinely, ");
+        sb.append("3) Offer a concrete resolution or next step. ");
+        sb.append("Do NOT be defensive. ");
+        sb.append("Always respond in ").append(language.toDisplayName()).append(".");
+
+        if (!kbContext.isEmpty()) {
+            sb.append("\n\nKnowledge Base (for resolution options):\n");
+            for (KnowledgeEntry entry : kbContext) {
+                if (entry.getProductName() != null && entry.getPrice() != null) {
+                    sb.append("- ").append(sanitize(entry.getProductName()))
+                      .append(": ₹").append(sanitize(entry.getPrice())).append("\n");
+                } else if (entry.getQuestion() != null && entry.getAnswer() != null) {
+                    sb.append("Q: ").append(sanitize(entry.getQuestion()))
+                      .append("\nA: ").append(sanitize(entry.getAnswer())).append("\n");
                 }
             }
         }

@@ -7,6 +7,7 @@ import com.aireceptionist.ai.service.PromptAssembler;
 import com.aireceptionist.common.resilience.FallbackMessageProvider;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
 import com.aireceptionist.knowledgebase.service.KnowledgeBaseService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ public class LlmService {
     private final PromptAssembler promptAssembler;
     private final FallbackMessageProvider fallbackProvider;
     private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
     private final Duration responseCacheTtl;
 
     public LlmService(AiChatPort aiChatPort,
@@ -42,6 +44,7 @@ public class LlmService {
                       PromptAssembler promptAssembler,
                       FallbackMessageProvider fallbackProvider,
                       StringRedisTemplate redisTemplate,
+                      ObjectMapper objectMapper,
                       @Value("${app.cache.response-ttl-minutes:5}") int cacheTtlMinutes) {
         this.aiChatPort = aiChatPort;
         this.knowledgeBaseService = knowledgeBaseService;
@@ -49,18 +52,24 @@ public class LlmService {
         this.promptAssembler = promptAssembler;
         this.fallbackProvider = fallbackProvider;
         this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
         this.responseCacheTtl = Duration.ofMinutes(cacheTtlMinutes);
     }
 
     @AiResponse(eventType = "QUERY_RESPONSE")
     @CircuitBreaker(name = "llmService", fallbackMethod = "generateResponseFallback")
-    public AiResponseResult generateResponse(String tenantId, String query,
-                                              String customerPhone, Language language) {
-        String cacheKey = CACHE_PREFIX + tenantId + CACHE_QUERY_INFIX + sha256(query.toLowerCase().trim());
+    public AiResponseResult generateResponse(String tenantId, String businessName, String query,
+                                             String customerPhone, Language language) {
+        String cacheKey = CACHE_PREFIX + tenantId + CACHE_QUERY_INFIX
+                + sha256(query.toLowerCase().trim() + "|" + language.toLangCode());
         String cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
             log.debug("LLM cache hit for tenant={}", tenantId);
-            return new AiResponseResult(cached, 1.0);
+            try {
+                return objectMapper.readValue(cached, AiResponseResult.class);
+            } catch (Exception ex) {
+                log.debug("Cache deserialization failed, re-querying LLM: {}", ex.getMessage());
+            }
         }
 
         List<ConversationTurn> history = customerPhone != null
@@ -69,19 +78,44 @@ public class LlmService {
 
         List<KnowledgeEntry> kbContext = knowledgeBaseService.search(UUID.fromString(tenantId), query);
 
-        String systemPrompt = promptAssembler.buildSystemPrompt(tenantId, kbContext, language);
+        String systemPrompt = promptAssembler.buildSystemPrompt(businessName, kbContext, language);
         String userMessage = promptAssembler.buildUserMessage(history, query);
 
         AiResponseResult result = aiChatPort.chat(systemPrompt, userMessage);
         log.debug("LLM response generated for tenant={}, confidence={}", tenantId, result.confidence());
 
-        redisTemplate.opsForValue().set(cacheKey, result.response(), responseCacheTtl);
+        try {
+            redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(result), responseCacheTtl);
+        } catch (Exception ex) {
+            log.debug("Failed to cache LLM response for tenant={}: {}", tenantId, ex.getMessage());
+        }
         return result;
     }
 
-    protected AiResponseResult generateResponseFallback(String tenantId, String query,
+    protected AiResponseResult generateResponseFallback(String tenantId, String businessName, String query,
                                                         String customerPhone, Language language,
                                                         Throwable cause) {
+        return new AiResponseResult(fallbackProvider.getFallbackResponse(tenantId, cause), 0.0, true);
+    }
+
+    @AiResponse(eventType = "QUERY_RESPONSE")
+    @CircuitBreaker(name = "llmService", fallbackMethod = "generateEmpathyResponseFallback")
+    public AiResponseResult generateEmpathyResponse(String tenantId, String businessName, String query,
+                                                     String customerPhone, Language language) {
+        List<ConversationTurn> history = customerPhone != null
+                ? conversationContextService.getHistory(tenantId, customerPhone, MAX_HISTORY_TURNS)
+                : List.of();
+        List<KnowledgeEntry> kbContext = knowledgeBaseService.search(UUID.fromString(tenantId), query);
+        String systemPrompt = promptAssembler.buildEmpathySystemPrompt(businessName, kbContext, language);
+        String userMessage = promptAssembler.buildUserMessage(history, query);
+        AiResponseResult result = aiChatPort.chat(systemPrompt, userMessage);
+        log.debug("Empathy response generated for tenant={}, confidence={}", tenantId, result.confidence());
+        return result;
+    }
+
+    protected AiResponseResult generateEmpathyResponseFallback(String tenantId, String businessName, String query,
+                                                                String customerPhone, Language language,
+                                                                Throwable cause) {
         return new AiResponseResult(fallbackProvider.getFallbackResponse(tenantId, cause), 0.0, true);
     }
 
@@ -95,7 +129,7 @@ public class LlmService {
             }
             return hex.toString();
         } catch (Exception ex) {
-            return Integer.toHexString(input.hashCode());
+            throw new RuntimeException("SHA-256 is unavailable", ex);
         }
     }
 }

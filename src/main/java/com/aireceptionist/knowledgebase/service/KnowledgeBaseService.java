@@ -170,13 +170,15 @@ public class KnowledgeBaseService {
                 .toList();
 
         if (tokens.isEmpty()) {
-            return List.of();
+            List<KnowledgeEntry> all = repository.findByTenantId(tenantId);
+            return all.stream().limit(MAX_SEARCH_RESULTS).toList();
         }
 
         Map<UUID, int[]> hitCount = new LinkedHashMap<>();
         Map<UUID, KnowledgeEntry> entryById = new LinkedHashMap<>();
         for (String token : tokens) {
-            List<KnowledgeEntry> matches = repository.searchByKeyword(tenantId, "%" + token + "%");
+            String escaped = token.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+            List<KnowledgeEntry> matches = repository.searchByKeyword(tenantId, "%" + escaped + "%");
             for (KnowledgeEntry entry : matches) {
                 hitCount.computeIfAbsent(entry.getId(), id -> new int[]{0})[0]++;
                 entryById.put(entry.getId(), entry);
@@ -207,7 +209,7 @@ public class KnowledgeBaseService {
             }
             return hex.toString();
         } catch (Exception ex) {
-            return Integer.toHexString(input.hashCode());
+            throw new RuntimeException("SHA-256 is unavailable", ex);
         }
     }
 }
