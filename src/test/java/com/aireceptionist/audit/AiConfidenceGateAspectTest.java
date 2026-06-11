@@ -60,6 +60,7 @@ class AiConfidenceGateAspectTest {
 
         assertThat(result).isEqualTo(new AiResponseResult("answer", 0.91));
         AuditLogEntry entry = savedAuditEntry();
+        assertThat(entry.id()).isNotNull();
         assertThat(entry.tenantId()).isEqualTo(tenantId);
         assertThat(entry.eventType()).isEqualTo(AuditEventType.AUDIT_HIGH_CONFIDENCE);
         assertThat(entry.confidence()).isEqualByComparingTo(BigDecimal.valueOf(0.91));

@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record AuditLogEntry(
+        UUID id,
         UUID tenantId,
         String eventType,
         BigDecimal confidence,

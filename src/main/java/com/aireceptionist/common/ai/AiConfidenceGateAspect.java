@@ -64,11 +64,13 @@ public class AiConfidenceGateAspect {
         String tenantId = resolveTenantId(joinPoint.getArgs());
         if (tenantId == null) {
             log.warn("AI response skipped audit because no tenant context was available");
-            return routeResult(aiResult, null, joinPoint.getArgs());
+            return routeResult(aiResult, null, null, joinPoint.getArgs());
         }
 
+        UUID auditLogId = UUID.randomUUID();
         String eventType = resolveAuditEventType(aiResult.confidence());
         auditLogRepository.save(new AuditLogEntry(
+                auditLogId,
                 UUID.fromString(tenantId),
                 eventType,
                 BigDecimal.valueOf(aiResult.confidence()).setScale(2, RoundingMode.HALF_UP),
@@ -76,7 +78,7 @@ public class AiConfidenceGateAspect {
                 Instant.now(clock)
         ));
 
-        return routeResult(aiResult, tenantId, joinPoint.getArgs());
+        return routeResult(aiResult, tenantId, auditLogId, joinPoint.getArgs());
     }
 
     private String resolveAuditEventType(double confidence) {
@@ -85,10 +87,10 @@ public class AiConfidenceGateAspect {
         return AuditEventType.AUDIT_LOW_CONFIDENCE;
     }
 
-    private Object routeResult(AiResponseResult aiResult, String tenantId, Object[] args) {
+    private Object routeResult(AiResponseResult aiResult, String tenantId, UUID auditLogId, Object[] args) {
         if (aiResult.confidence() < FALLBACK_THRESHOLD) {
             log.warn("Low AI confidence {} for tenant {}; returning fallback", aiResult.confidence(), tenantId);
-            publishFlaggedEvent(tenantId, args);
+            publishFlaggedEvent(tenantId, auditLogId, args);
             return new AiResponseResult(
                     fallbackMessageProvider.getFallbackResponse(tenantId, null),
                     aiResult.confidence(),
@@ -97,13 +99,13 @@ public class AiConfidenceGateAspect {
         }
         if (aiResult.confidence() < FLAG_THRESHOLD) {
             log.warn("Medium AI confidence {} for tenant {}; flagging for review", aiResult.confidence(), tenantId);
-            publishFlaggedEvent(tenantId, args);
+            publishFlaggedEvent(tenantId, auditLogId, args);
             return aiResult.flagged();
         }
         return aiResult;
     }
 
-    private void publishFlaggedEvent(String tenantId, Object[] args) {
+    private void publishFlaggedEvent(String tenantId, UUID auditLogId, Object[] args) {
         if (tenantId == null) return;
         try {
             List<String> stringArgs = extractStringArgs(args);
@@ -111,7 +113,7 @@ public class AiConfidenceGateAspect {
             String originalQuery = stringArgs.size() > 2 ? stringArgs.get(2) : "";
             String ownerPhone = tenantOwnerPhonePort.getOwnerPhone(tenantId).orElse(null);
             eventPublisher.publishEvent(
-                    new UnansweredQueryFlaggedEvent(tenantId, customerPhone, originalQuery, ownerPhone));
+                    new UnansweredQueryFlaggedEvent(tenantId, customerPhone, originalQuery, ownerPhone, auditLogId));
         } catch (Exception ex) {
             log.warn("Failed to publish UnansweredQueryFlaggedEvent for tenant={}: {}", tenantId, ex.getMessage());
         }

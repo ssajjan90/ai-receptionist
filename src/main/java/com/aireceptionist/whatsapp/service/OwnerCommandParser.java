@@ -2,12 +2,14 @@ package com.aireceptionist.whatsapp.service;
 
 import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.knowledgebase.dto.ConflictInfo;
+import com.aireceptionist.knowledgebase.event.KbTrainingCompletedEvent;
 import com.aireceptionist.knowledgebase.service.ConflictDetectionService;
 import com.aireceptionist.knowledgebase.service.KnowledgeBaseService;
 import com.aireceptionist.whatsapp.event.OwnerCommandReceivedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Service;
@@ -47,17 +49,20 @@ public class OwnerCommandParser {
     private final ConflictDetectionService conflictDetectionService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OwnerCommandParser(WhatsAppNotificationService notificationService,
                                KnowledgeBaseService knowledgeBaseService,
                                ConflictDetectionService conflictDetectionService,
                                StringRedisTemplate redisTemplate,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               ApplicationEventPublisher eventPublisher) {
         this.notificationService = notificationService;
         this.knowledgeBaseService = knowledgeBaseService;
         this.conflictDetectionService = conflictDetectionService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @ApplicationModuleListener
@@ -77,7 +82,12 @@ public class OwnerCommandParser {
                 return;
             }
 
-            // 2. Match known command patterns
+            // 2. Check for pending training context — any reply is the answer
+            if (handleTrainingModeReply(trimmed, tenantId, ownerPhone)) {
+                return;
+            }
+
+            // 3. Match known command patterns
             Matcher addFaqMatcher = ADD_FAQ_CMD.matcher(trimmed);
             Matcher addMatcher = ADD_CMD.matcher(trimmed);
             Matcher updateMatcher = UPDATE_CMD.matcher(trimmed);
@@ -95,12 +105,57 @@ public class OwnerCommandParser {
             } else if (deleteMatcher.matches()) {
                 handleDelete(tenantId, ownerPhone, deleteMatcher.group(1).trim());
             } else {
+                // 4. Unrecognised
                 log.info("Unrecognised owner command — tenant={}, message='{}'", tenantId, trimmed);
                 notificationService.sendMessage(tenantId, ownerPhone, HELP_TEXT);
             }
         } finally {
             TenantContext.clear();
         }
+    }
+
+    private boolean handleTrainingModeReply(String message, String tenantId, String ownerPhone) {
+        String key = trainKey(tenantId, ownerPhone);
+        String contextJson = redisTemplate.opsForValue().get(key);
+        if (contextJson == null) {
+            return false;
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, String> context = objectMapper.readValue(contextJson, Map.class);
+            String question = context.get("question");
+            String auditLogIdStr = context.get("auditLogId");
+            UUID auditLogId = (auditLogIdStr != null && !auditLogIdStr.isBlank())
+                    ? UUID.fromString(auditLogIdStr) : null;
+
+            if ("SKIP".equalsIgnoreCase(message.trim())) {
+                redisTemplate.delete(key);
+                if (auditLogId != null) {
+                    eventPublisher.publishEvent(new KbTrainingCompletedEvent(tenantId, auditLogId, question, null));
+                }
+                notificationService.sendMessage(tenantId, ownerPhone, "Got it, skipping this one.");
+                log.info("Owner skipped training for tenant={}", tenantId);
+                return true;
+            }
+
+            if (question == null || question.isBlank()) {
+                log.warn("Training context missing question for tenant={}, discarding key", tenantId);
+                redisTemplate.delete(key);
+                notificationService.sendMessage(tenantId, ownerPhone, "Got it, skipping this one.");
+                return true;
+            }
+
+            knowledgeBaseService.addFaqFromOwnerTraining(UUID.fromString(tenantId), question, message);
+            redisTemplate.delete(key);
+            eventPublisher.publishEvent(new KbTrainingCompletedEvent(tenantId, auditLogId, question, message));
+            notificationService.sendMessage(tenantId, ownerPhone, "Got it! I'll remember that for next time. ✓");
+            log.info("Owner trained KB for tenant={}, question='{}'", tenantId, question);
+        } catch (Exception ex) {
+            log.warn("Failed to process training reply for tenant={}: {}", tenantId, ex.getMessage());
+            notificationService.sendMessage(tenantId, ownerPhone, "Sorry, I couldn't save that answer. Please try again.");
+        }
+        return true;
     }
 
     private void handleAddOrUpdate(String tenantId, String ownerPhone, String product, String price) {
@@ -195,5 +250,9 @@ public class OwnerCommandParser {
 
     private String pendingCmdKey(String tenantId, String ownerPhone) {
         return PENDING_CMD_KEY_PREFIX + tenantId + ":" + ownerPhone;
+    }
+
+    private String trainKey(String tenantId, String ownerPhone) {
+        return TrainingRedisKeys.PREFIX + tenantId + ":" + ownerPhone;
     }
 }

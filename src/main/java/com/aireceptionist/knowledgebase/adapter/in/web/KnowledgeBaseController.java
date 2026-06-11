@@ -9,18 +9,30 @@ import com.aireceptionist.knowledgebase.adapter.in.web.dto.OcrConfirmRequest;
 import com.aireceptionist.knowledgebase.adapter.in.web.dto.OcrConfirmResponse;
 import com.aireceptionist.knowledgebase.adapter.in.web.dto.OcrImportResponse;
 import com.aireceptionist.knowledgebase.adapter.in.web.dto.OcrLowConfidenceError;
+import com.aireceptionist.knowledgebase.domain.EntryType;
+import com.aireceptionist.knowledgebase.dto.CreateKnowledgeEntryRequest;
+import com.aireceptionist.knowledgebase.dto.KnowledgeEntryMapper;
+import com.aireceptionist.knowledgebase.dto.KnowledgeEntryResponse;
+import com.aireceptionist.knowledgebase.dto.UpdateKnowledgeEntryRequest;
 import com.aireceptionist.knowledgebase.exception.OcrLowConfidenceException;
 import com.aireceptionist.knowledgebase.service.KnowledgeBaseService;
 import com.aireceptionist.knowledgebase.service.OcrIngestionService;
 import com.aireceptionist.knowledgebase.service.ProductKnowledgeEntry;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -45,11 +57,14 @@ public class KnowledgeBaseController extends VersionedRestController {
 
     private final OcrIngestionService ocrIngestionService;
     private final KnowledgeBaseService knowledgeBaseService;
+    private final KnowledgeEntryMapper knowledgeEntryMapper;
 
     public KnowledgeBaseController(OcrIngestionService ocrIngestionService,
-                                   KnowledgeBaseService knowledgeBaseService) {
+                                   KnowledgeBaseService knowledgeBaseService,
+                                   KnowledgeEntryMapper knowledgeEntryMapper) {
         this.ocrIngestionService = ocrIngestionService;
         this.knowledgeBaseService = knowledgeBaseService;
+        this.knowledgeEntryMapper = knowledgeEntryMapper;
     }
 
     @PostMapping("/ocr-import")
@@ -100,6 +115,52 @@ public class KnowledgeBaseController extends VersionedRestController {
                         .toList()
         );
         return ApiResponse.ok(new OcrConfirmResponse(tenantId, saved, "OCR entries saved"));
+    }
+
+    @GetMapping
+    @Transactional(readOnly = true)
+    public ApiResponse<Page<KnowledgeEntryResponse>> listEntries(
+            @PathVariable UUID tenantId,
+            @RequestParam(required = false) EntryType type,
+            @PageableDefault(size = 20, sort = "createdAt") Pageable pageable,
+            Authentication authentication) {
+        validateTenantOwnership(tenantId, authentication);
+        Page<KnowledgeEntryResponse> page = knowledgeBaseService
+                .findAllByTenantId(tenantId, type, pageable)
+                .map(knowledgeEntryMapper::toResponse);
+        return ApiResponse.ok(page);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<KnowledgeEntryResponse> createEntry(
+            @PathVariable UUID tenantId,
+            @Valid @RequestBody CreateKnowledgeEntryRequest request,
+            Authentication authentication) {
+        validateTenantOwnership(tenantId, authentication);
+        return ApiResponse.ok(knowledgeEntryMapper.toResponse(
+                knowledgeBaseService.createEntry(tenantId, request)));
+    }
+
+    @PutMapping("/{entryId}")
+    public ApiResponse<KnowledgeEntryResponse> updateEntry(
+            @PathVariable UUID tenantId,
+            @PathVariable UUID entryId,
+            @Valid @RequestBody UpdateKnowledgeEntryRequest request,
+            Authentication authentication) {
+        validateTenantOwnership(tenantId, authentication);
+        return ApiResponse.ok(knowledgeEntryMapper.toResponse(
+                knowledgeBaseService.updateEntry(tenantId, entryId, request)));
+    }
+
+    @DeleteMapping("/{entryId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteEntry(
+            @PathVariable UUID tenantId,
+            @PathVariable UUID entryId,
+            Authentication authentication) {
+        validateTenantOwnership(tenantId, authentication);
+        knowledgeBaseService.deleteEntryById(tenantId, entryId);
     }
 
     private void validateImage(MultipartFile image) {

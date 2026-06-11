@@ -100,6 +100,18 @@ public class KnowledgeEntry {
         this.updatedAt = Instant.now();
     }
 
+    public void update(String productName, String question, String answer, String price, String source) {
+        if (productName != null) this.productName = productName;
+        if (question != null) this.question = question;
+        if (answer != null) this.answer = answer;
+        if (price != null) {
+            this.price = price;
+            this.answer = price;
+        }
+        this.source = source;
+        this.updatedAt = Instant.now();
+    }
+
     public static KnowledgeEntry faq(UUID tenantId, String question, String answer, String source) {
         KnowledgeEntry entry = new KnowledgeEntry(tenantId, EntryType.FAQ, source);
         entry.question = question;

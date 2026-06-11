@@ -2,6 +2,8 @@ package com.aireceptionist.knowledgebase.repository;
 
 import com.aireceptionist.knowledgebase.domain.EntryType;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,7 +16,11 @@ public interface KnowledgeEntryRepository extends JpaRepository<KnowledgeEntry, 
 
     List<KnowledgeEntry> findByTenantId(UUID tenantId);
 
+    Page<KnowledgeEntry> findByTenantId(UUID tenantId, Pageable pageable);
+
     List<KnowledgeEntry> findByTenantIdAndType(UUID tenantId, EntryType type);
+
+    Page<KnowledgeEntry> findByTenantIdAndType(UUID tenantId, EntryType type, Pageable pageable);
 
     List<KnowledgeEntry> findByTenantIdAndTypeAndSource(UUID tenantId, EntryType type, String source);
 

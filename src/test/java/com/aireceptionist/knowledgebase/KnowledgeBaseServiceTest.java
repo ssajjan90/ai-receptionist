@@ -4,8 +4,9 @@ import com.aireceptionist.knowledgebase.domain.EntryType;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
 import com.aireceptionist.knowledgebase.event.KnowledgeEntryAddedEvent;
 import com.aireceptionist.knowledgebase.repository.KnowledgeEntryRepository;
-import com.aireceptionist.knowledgebase.service.ProductKnowledgeEntry;
+import com.aireceptionist.knowledgebase.service.ConflictDetectionService;
 import com.aireceptionist.knowledgebase.service.KnowledgeBaseService;
+import com.aireceptionist.knowledgebase.service.ProductKnowledgeEntry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,13 +33,15 @@ class KnowledgeBaseServiceTest {
     private final KnowledgeEntryRepository repository = mock(KnowledgeEntryRepository.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+    private final ConflictDetectionService conflictDetectionService = mock(ConflictDetectionService.class);
     @SuppressWarnings("unchecked")
     private final ValueOperations<String, String> valueOps = mock(ValueOperations.class);
     private final KnowledgeBaseService service;
 
     KnowledgeBaseServiceTest() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        service = new KnowledgeBaseService(repository, eventPublisher, redisTemplate, new ObjectMapper(), 5);
+        service = new KnowledgeBaseService(repository, eventPublisher, redisTemplate, new ObjectMapper(),
+                conflictDetectionService, 5);
     }
 
     @Test

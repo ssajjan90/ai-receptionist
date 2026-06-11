@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -38,6 +39,7 @@ class OwnerCommandParserTest {
     private ConflictDetectionService conflictDetectionService;
     private StringRedisTemplate redisTemplate;
     private ValueOperations<String, String> valueOps;
+    private ApplicationEventPublisher eventPublisher;
     private OwnerCommandParser parser;
 
     @BeforeEach
@@ -47,11 +49,12 @@ class OwnerCommandParserTest {
         conflictDetectionService = mock(ConflictDetectionService.class);
         redisTemplate = mock(StringRedisTemplate.class);
         valueOps = mock(ValueOperations.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.get(anyString())).thenReturn(null); // no pending command by default
 
         parser = new OwnerCommandParser(notificationService, knowledgeBaseService,
-                conflictDetectionService, redisTemplate, new ObjectMapper());
+                conflictDetectionService, redisTemplate, new ObjectMapper(), eventPublisher);
     }
 
     @Test

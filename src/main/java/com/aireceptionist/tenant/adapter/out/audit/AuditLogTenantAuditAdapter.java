@@ -24,6 +24,7 @@ public class AuditLogTenantAuditAdapter implements TenantAuditPort {
     @Override
     public void recordTenantDataErased(UUID tenantId) {
         auditLogWriter.save(new AuditLogEntry(
+                UUID.randomUUID(),
                 tenantId,
                 "TENANT_DATA_ERASED",
                 null,
@@ -35,6 +36,7 @@ public class AuditLogTenantAuditAdapter implements TenantAuditPort {
     @Override
     public void recordTenantDataExported(UUID tenantId) {
         auditLogWriter.save(new AuditLogEntry(
+                UUID.randomUUID(),
                 tenantId,
                 "TENANT_DATA_EXPORTED",
                 BigDecimal.ONE,
