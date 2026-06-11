@@ -20,6 +20,8 @@ import com.aireceptionist.tenant.port.out.TokenIssuerPort;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 @Service("tenantRegistrationService")
 public class TenantRegistrationService implements RegisterTenantUseCase, VerifyTenantOtpUseCase, ResendTenantOtpUseCase {
@@ -33,6 +35,9 @@ public class TenantRegistrationService implements RegisterTenantUseCase, VerifyT
     private final TokenIssuerPort tokenIssuerPort;
     private final SubscriptionProvisioningPort subscriptionProvisioningPort;
     private final BCryptPasswordEncoder passwordEncoder;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public TenantRegistrationService(TenantRegistrationRepository tenantRepository, OtpPort otpPort,
                                      OwnerNotificationPort ownerNotificationPort,
@@ -64,6 +69,7 @@ public class TenantRegistrationService implements RegisterTenantUseCase, VerifyT
                 passwordEncoder.encode(request.password())
         );
         BusinessTenant savedTenant = tenantRepository.save(tenant);
+        entityManager.flush();
         subscriptionProvisioningPort.provisionBasicSubscription(savedTenant.getId());
 
         String otp = otpPort.generateAndStore(savedTenant.getOwnerPhone());
