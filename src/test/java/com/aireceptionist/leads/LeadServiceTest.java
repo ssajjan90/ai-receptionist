@@ -1,5 +1,7 @@
 package com.aireceptionist.leads;
 
+import com.aireceptionist.common.exception.AuthorizationException;
+import com.aireceptionist.common.exception.NotFoundException;
 import com.aireceptionist.leads.domain.Lead;
 import com.aireceptionist.leads.domain.LeadChannel;
 import com.aireceptionist.leads.domain.LeadStatus;
@@ -15,8 +17,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -80,5 +88,65 @@ class LeadServiceTest {
         assertThatThrownBy(() -> leadService.createLead(command, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("tenantId");
+    }
+
+    @Test
+    void findLeadsReturnsAllWhenStatusIsNull() {
+        UUID tenantId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Lead> page = new PageImpl<>(List.of());
+        when(leadRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable)).thenReturn(page);
+
+        Page<Lead> result = leadService.findLeads(tenantId, null, pageable);
+
+        assertThat(result).isSameAs(page);
+    }
+
+    @Test
+    void findLeadsFiltersByStatusWhenProvided() {
+        UUID tenantId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Lead> page = new PageImpl<>(List.of());
+        when(leadRepository.findByTenantIdAndStatus(tenantId, LeadStatus.CONTACTED, pageable)).thenReturn(page);
+
+        Page<Lead> result = leadService.findLeads(tenantId, LeadStatus.CONTACTED, pageable);
+
+        assertThat(result).isSameAs(page);
+    }
+
+    @Test
+    void updateStatusUpdatesAndSavesLead() {
+        UUID tenantId = UUID.randomUUID();
+        Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
+                "phone", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
+        when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+        when(leadRepository.save(any(Lead.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Lead updated = leadService.updateStatus(tenantId, lead.getId(), LeadStatus.CONTACTED);
+
+        assertThat(updated.getStatus()).isEqualTo(LeadStatus.CONTACTED);
+        verify(leadRepository).save(lead);
+    }
+
+    @Test
+    void updateStatusThrowsAuthorizationExceptionForCrossTenantLead() {
+        UUID ownerTenantId = UUID.randomUUID();
+        UUID otherTenantId = UUID.randomUUID();
+        Lead lead = Lead.create(ownerTenantId, "Ravi Kumar", "+919876543210",
+                "phone", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
+        when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+
+        assertThatThrownBy(() -> leadService.updateStatus(otherTenantId, lead.getId(), LeadStatus.CONTACTED))
+                .isInstanceOf(AuthorizationException.class);
+    }
+
+    @Test
+    void updateStatusThrowsNotFoundWhenLeadMissing() {
+        UUID tenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+        when(leadRepository.findById(leadId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> leadService.updateStatus(tenantId, leadId, LeadStatus.CONTACTED))
+                .isInstanceOf(NotFoundException.class);
     }
 }

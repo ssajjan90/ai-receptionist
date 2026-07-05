@@ -15,5 +15,6 @@ public record LeadResponse(
         LeadChannel channel,
         LeadStatus status,
         Instant consentTimestamp,
+        Instant createdAt,
         boolean erased
 ) {}

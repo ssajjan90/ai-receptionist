@@ -85,6 +85,10 @@ public class Lead {
         updatedAt = Instant.now();
     }
 
+    public void updateStatus(LeadStatus newStatus) {
+        this.status = newStatus;
+    }
+
     public UUID getId() { return id; }
     public UUID getTenantId() { return tenantId; }
     public String getCustomerName() { return customerName; }
