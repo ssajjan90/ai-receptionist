@@ -9,6 +9,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -104,6 +105,12 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleMaxUpload(MaxUploadSizeExceededException ex) {
         return ApiResponse.error("FILE_TOO_LARGE", "Uploaded file exceeds the 5MB limit", null);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleOptimisticLock(OptimisticLockingFailureException ex) {
+        return ApiResponse.error("CONCURRENT_MODIFICATION", "This record was modified by another request. Please retry.", null);
     }
 
     @ExceptionHandler(CallNotPermittedException.class)

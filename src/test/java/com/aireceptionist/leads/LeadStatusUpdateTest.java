@@ -43,6 +43,7 @@ class LeadStatusUpdateTest extends AbstractIntegrationTest {
         Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
                 "Samsung Galaxy S24", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
         leadRepository.save(lead);
+        Instant originalUpdatedAt = leadRepository.findById(lead.getId()).orElseThrow().getUpdatedAt();
         String token = tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
 
         mockMvc.perform(patch("/v1/tenants/" + tenantId + "/leads/" + lead.getId())
@@ -54,11 +55,17 @@ class LeadStatusUpdateTest extends AbstractIntegrationTest {
 
         assertThat(leadRepository.findById(lead.getId()))
                 .isPresent()
-                .hasValueSatisfying(l -> assertThat(l.getStatus()).isEqualTo(LeadStatus.CONTACTED));
+                .hasValueSatisfying(l -> {
+                    assertThat(l.getStatus()).isEqualTo(LeadStatus.CONTACTED);
+                    assertThat(l.getUpdatedAt()).isAfter(originalUpdatedAt);
+                });
     }
 
     @Test
-    void patchRejectsCrossTenantLeadUpdate() throws Exception {
+    void patchRejectsCrossTenantLeadUpdateAsNotFound() throws Exception {
+        // RLS (V8__create_rls_policies.sql) scopes findById() to the caller's tenant, so a
+        // cross-tenant lead is invisible rather than surfacing a distinct 403 — see review of
+        // Story 4-1, AC4.
         UUID ownerTenantId = seedTenant();
         UUID otherTenantId = seedTenant();
         Lead lead = Lead.create(ownerTenantId, "Ravi Kumar", "+919876543211",
@@ -70,10 +77,23 @@ class LeadStatusUpdateTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"CONTACTED\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
 
         assertThat(leadRepository.findById(lead.getId()))
                 .isPresent()
                 .hasValueSatisfying(l -> assertThat(l.getStatus()).isEqualTo(LeadStatus.NEW));
+    }
+
+    @Test
+    void patchReturns404ForNonExistentLead() throws Exception {
+        UUID tenantId = seedTenant();
+        UUID nonExistentLeadId = UUID.randomUUID();
+        String token = tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
+
+        mockMvc.perform(patch("/v1/tenants/" + tenantId + "/leads/" + nonExistentLeadId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CONTACTED\"}"))
+                .andExpect(status().isNotFound());
     }
 }

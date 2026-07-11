@@ -1,6 +1,8 @@
 package com.aireceptionist.leads.service;
 
-import com.aireceptionist.common.exception.AuthorizationException;
+import com.aireceptionist.common.audit.AuditEventType;
+import com.aireceptionist.common.audit.AuditLogEntry;
+import com.aireceptionist.common.audit.AuditLogRepository;
 import com.aireceptionist.common.exception.NotFoundException;
 import com.aireceptionist.leads.domain.Lead;
 import com.aireceptionist.leads.domain.LeadStatus;
@@ -16,6 +18,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -26,10 +30,13 @@ public class LeadService {
 
     private final LeadRepository leadRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditLogRepository auditLogRepository;
 
-    public LeadService(LeadRepository leadRepository, ApplicationEventPublisher eventPublisher) {
+    public LeadService(LeadRepository leadRepository, ApplicationEventPublisher eventPublisher,
+                       AuditLogRepository auditLogRepository) {
         this.leadRepository = leadRepository;
         this.eventPublisher = eventPublisher;
+        this.auditLogRepository = auditLogRepository;
     }
 
     public LeadResponse createLead(CreateLeadCommand command, String ownerPhone) {
@@ -76,7 +83,7 @@ public class LeadService {
     @Transactional(readOnly = true)
     public Page<Lead> findLeads(UUID tenantId, LeadStatus status, Pageable pageable) {
         if (status == null) {
-            return leadRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable);
+            return leadRepository.findByTenantId(tenantId, pageable);
         }
         return leadRepository.findByTenantIdAndStatus(tenantId, status, pageable);
     }
@@ -85,12 +92,56 @@ public class LeadService {
         Lead lead = leadRepository.findById(leadId)
                 .orElseThrow(() -> new NotFoundException("LEAD_NOT_FOUND", "Lead not found"));
 
+        // Row-Level Security (V8__create_rls_policies.sql) already scopes findById() to the
+        // caller's tenant via app.current_tenant, so a cross-tenant leadId is invisible above and
+        // surfaces as NotFoundException. This check is defense-in-depth only; it intentionally
+        // returns 404 (not a distinct 403) to match RLS's behavior and avoid leaking cross-tenant
+        // lead existence.
         if (!lead.getTenantId().equals(tenantId)) {
-            throw new AuthorizationException("FORBIDDEN", "Tenant access is forbidden.");
+            throw new NotFoundException("LEAD_NOT_FOUND", "Lead not found");
+        }
+
+        if (Boolean.TRUE.equals(lead.getErased())) {
+            throw new NotFoundException("LEAD_NOT_FOUND", "Lead not found");
         }
 
         lead.updateStatus(newStatus);
         leadRepository.save(lead);
         return lead;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Lead> exportLeads(UUID tenantId) {
+        return leadRepository.findByTenantIdAndErasedFalse(tenantId);
+    }
+
+    public void eraseLead(UUID tenantId, UUID leadId) {
+        Lead lead = leadRepository.findById(leadId)
+                .orElseThrow(() -> new NotFoundException("LEAD_NOT_FOUND", "Lead not found"));
+
+        // Same RLS defense-in-depth rationale as updateStatus(): a cross-tenant leadId is
+        // already invisible to findById() above; this check just makes intent explicit.
+        if (!lead.getTenantId().equals(tenantId)) {
+            throw new NotFoundException("LEAD_NOT_FOUND", "Lead not found");
+        }
+
+        if (Boolean.TRUE.equals(lead.getErased())) {
+            throw new NotFoundException("LEAD_NOT_FOUND", "Lead not found");
+        }
+
+        lead.erase();
+        leadRepository.save(lead);
+
+        auditLogRepository.save(new AuditLogEntry(UUID.randomUUID(), tenantId,
+                AuditEventType.DATA_ERASED, null, leadId.toString(), Instant.now()));
+        log.info("Lead erased id={} tenant={}", leadId, tenantId);
+    }
+
+    public void eraseAllLeads(UUID tenantId) {
+        int erasedCount = leadRepository.bulkEraseByTenantId(tenantId);
+
+        auditLogRepository.save(new AuditLogEntry(UUID.randomUUID(), tenantId,
+                AuditEventType.DATA_ERASED_BULK, null, null, Instant.now()));
+        log.info("Bulk erased {} leads for tenant={}", erasedCount, tenantId);
     }
 }

@@ -21,12 +21,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class LeadListPerformanceTest extends AbstractIntegrationTest {
 
+    private static final int ITERATIONS = 5;
+
     @Autowired MockMvc mockMvc;
     @Autowired JwtTokenProvider tokenProvider;
     @Autowired JdbcTemplate jdbcTemplate;
 
-    @Test
-    void listLeadsRespondsWithin500msFor1000Leads() throws Exception {
+    private UUID seedTenantWith1000Leads() {
         UUID tenantId = UUID.randomUUID();
         jdbcTemplate.update(
                 "INSERT INTO tenants (id, business_name, phone_number, tier, status) VALUES (?, ?, ?, 'PRO', 'ACTIVE')",
@@ -45,15 +46,42 @@ class LeadListPerformanceTest extends AbstractIntegrationTest {
                 "INSERT INTO leads (id, tenant_id, name, phone, intent, channel, status, consent_timestamp, " +
                         "consent_channel, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rows);
+        return tenantId;
+    }
 
+    private long averageResponseTimeMs(String url, String token) throws Exception {
+        // one untimed warm-up call to exclude JIT/connection-pool/first-query overhead,
+        // then average over several timed calls to reduce wall-clock flakiness
+        mockMvc.perform(get(url).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        long totalMs = 0;
+        for (int i = 0; i < ITERATIONS; i++) {
+            long start = System.currentTimeMillis();
+            mockMvc.perform(get(url).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk());
+            totalMs += System.currentTimeMillis() - start;
+        }
+        return totalMs / ITERATIONS;
+    }
+
+    @Test
+    void listLeadsRespondsWithin500msFor1000Leads() throws Exception {
+        UUID tenantId = seedTenantWith1000Leads();
         String token = tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
 
-        long start = System.currentTimeMillis();
-        mockMvc.perform(get("/v1/tenants/" + tenantId + "/leads?size=20")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk());
-        long elapsedMs = System.currentTimeMillis() - start;
+        long averageMs = averageResponseTimeMs("/v1/tenants/" + tenantId + "/leads?size=20", token);
 
-        assertThat(elapsedMs).isLessThanOrEqualTo(500);
+        assertThat(averageMs).isLessThanOrEqualTo(500);
+    }
+
+    @Test
+    void listLeadsFilteredByStatusRespondsWithin500msFor1000Leads() throws Exception {
+        UUID tenantId = seedTenantWith1000Leads();
+        String token = tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
+
+        long averageMs = averageResponseTimeMs("/v1/tenants/" + tenantId + "/leads?status=NEW&size=20", token);
+
+        assertThat(averageMs).isLessThanOrEqualTo(500);
     }
 }

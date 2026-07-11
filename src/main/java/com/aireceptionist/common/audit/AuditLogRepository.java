@@ -79,4 +79,32 @@ public class AuditLogRepository implements AuditLogWriter {
     public int deleteOlderThan(Instant cutoff) {
         return jdbcTemplate.update("DELETE FROM audit_log WHERE occurred_at < ?", Timestamp.from(cutoff));
     }
+
+    public long countByTenantIdAndEventTypeAndOccurredAtAfter(UUID tenantId, String eventType, Instant after) {
+        return jdbcTemplate.execute((ConnectionCallback<Long>) connection -> {
+            try {
+                try (PreparedStatement tenantStatement = connection.prepareStatement("SELECT set_config(?, ?, false)")) {
+                    tenantStatement.setString(1, "app.current_tenant");
+                    tenantStatement.setString(2, tenantId.toString());
+                    tenantStatement.execute();
+                }
+                try (PreparedStatement statement = connection.prepareStatement("""
+                        SELECT COUNT(*) FROM audit_log
+                        WHERE tenant_id = ? AND event_type = ? AND occurred_at > ?
+                        """)) {
+                    statement.setObject(1, tenantId);
+                    statement.setString(2, eventType);
+                    statement.setTimestamp(3, Timestamp.from(after));
+                    try (var resultSet = statement.executeQuery()) {
+                        resultSet.next();
+                        return resultSet.getLong(1);
+                    }
+                }
+            } finally {
+                try (Statement tenantStatement = connection.createStatement()) {
+                    tenantStatement.execute("RESET app.current_tenant");
+                }
+            }
+        });
+    }
 }

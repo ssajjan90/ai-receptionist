@@ -30,3 +30,5 @@ logging:
 app:
   ocr:
     provider: google
+
+# features.daily-summary.enabled stays false (base default) until Phase 1b actually begins — see AC5 of story 4.2.

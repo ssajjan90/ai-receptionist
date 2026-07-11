@@ -22,6 +22,8 @@ spring:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
+    # required for CREATE INDEX CONCURRENTLY migrations (V19, V21), which cannot run inside a transaction
+    mixed: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -54,6 +56,12 @@ app:
     capacity: 100
     refill-tokens: 100
     refill-period-minutes: 1
+  dashboard:
+    url: ${DASHBOARD_URL:https://app.callsahayak.com/dashboard}
+
+features:
+  daily-summary:
+    enabled: false
 
 management:
   tracing:

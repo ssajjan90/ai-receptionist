@@ -1,6 +1,7 @@
 package com.aireceptionist.leads;
 
 import com.aireceptionist.common.api.GlobalExceptionHandler;
+import com.aireceptionist.common.exception.NotFoundException;
 import com.aireceptionist.common.security.TenantAwareAuthentication;
 import com.aireceptionist.leads.api.LeadController;
 import com.aireceptionist.leads.domain.Lead;
@@ -9,10 +10,12 @@ import com.aireceptionist.leads.domain.LeadStatus;
 import com.aireceptionist.leads.dto.LeadMapper;
 import com.aireceptionist.leads.service.LeadService;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -23,11 +26,14 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -115,6 +121,146 @@ class LeadControllerTest {
                         .principal(authentication(otherTenantId))
                         .contentType(APPLICATION_JSON)
                         .content("{\"status\":\"CONTACTED\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rejectsListForNonTenantAwareAuthentication() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/v1/tenants/{tenantId}/leads", tenantId)
+                        .principal(new UsernamePasswordAuthenticationToken("someone", "creds")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void returns404WhenPatchingNonExistentLead() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+        when(leadService.updateStatus(eq(tenantId), eq(leadId), eq(LeadStatus.CONTACTED)))
+                .thenThrow(new NotFoundException("LEAD_NOT_FOUND", "Lead not found"));
+
+        mockMvc.perform(patch("/v1/tenants/{tenantId}/leads/{leadId}", tenantId, leadId)
+                        .principal(authentication(tenantId))
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"status\":\"CONTACTED\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejectsPatchWithNullStatus() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+
+        mockMvc.perform(patch("/v1/tenants/{tenantId}/leads/{leadId}", tenantId, leadId)
+                        .principal(authentication(tenantId))
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"status\":null}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsPatchWithInvalidStatusEnum() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+
+        mockMvc.perform(patch("/v1/tenants/{tenantId}/leads/{leadId}", tenantId, leadId)
+                        .principal(authentication(tenantId))
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"status\":\"NOT_A_REAL_STATUS\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returnsConflictOnConcurrentStatusUpdate() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+        when(leadService.updateStatus(eq(tenantId), eq(leadId), eq(LeadStatus.CONTACTED)))
+                .thenThrow(new OptimisticLockingFailureException("stale version"));
+
+        mockMvc.perform(patch("/v1/tenants/{tenantId}/leads/{leadId}", tenantId, leadId)
+                        .principal(authentication(tenantId))
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"status\":\"CONTACTED\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void exportsNonErasedLeadsForTenant() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Lead lead = newLead(tenantId, LeadStatus.NEW);
+        when(leadService.exportLeads(tenantId)).thenReturn(List.of(lead));
+
+        mockMvc.perform(get("/v1/tenants/{tenantId}/leads/export", tenantId)
+                        .principal(authentication(tenantId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].customerName").value("Ravi Kumar"))
+                .andExpect(jsonPath("$.data[0].erased").value(false));
+    }
+
+    @Test
+    void rejectsExportForMismatchedTenant() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID otherTenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/v1/tenants/{tenantId}/leads/export", tenantId)
+                        .principal(authentication(otherTenantId)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void erasesLeadAndReturnsNoContent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+
+        mockMvc.perform(post("/v1/tenants/{tenantId}/leads/{leadId}/erase", tenantId, leadId)
+                        .principal(authentication(tenantId)))
+                .andExpect(status().isNoContent());
+
+        verify(leadService).eraseLead(tenantId, leadId);
+    }
+
+    @Test
+    void rejectsEraseForMismatchedTenant() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID otherTenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+
+        mockMvc.perform(post("/v1/tenants/{tenantId}/leads/{leadId}/erase", tenantId, leadId)
+                        .principal(authentication(otherTenantId)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void returns404WhenErasingNonExistentLead() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID leadId = UUID.randomUUID();
+        doThrow(new NotFoundException("LEAD_NOT_FOUND", "Lead not found"))
+                .when(leadService).eraseLead(tenantId, leadId);
+
+        mockMvc.perform(post("/v1/tenants/{tenantId}/leads/{leadId}/erase", tenantId, leadId)
+                        .principal(authentication(tenantId)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void erasesAllLeadsAndReturnsNoContent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(post("/v1/tenants/{tenantId}/leads/erase-all", tenantId)
+                        .principal(authentication(tenantId)))
+                .andExpect(status().isNoContent());
+
+        verify(leadService).eraseAllLeads(tenantId);
+    }
+
+    @Test
+    void rejectsEraseAllForMismatchedTenant() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID otherTenantId = UUID.randomUUID();
+
+        mockMvc.perform(post("/v1/tenants/{tenantId}/leads/erase-all", tenantId)
+                        .principal(authentication(otherTenantId)))
                 .andExpect(status().isForbidden());
     }
 }

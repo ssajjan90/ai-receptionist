@@ -1,6 +1,7 @@
 package com.aireceptionist.leads;
 
-import com.aireceptionist.common.exception.AuthorizationException;
+import com.aireceptionist.common.audit.AuditLogEntry;
+import com.aireceptionist.common.audit.AuditLogRepository;
 import com.aireceptionist.common.exception.NotFoundException;
 import com.aireceptionist.leads.domain.Lead;
 import com.aireceptionist.leads.domain.LeadChannel;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
@@ -30,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,6 +41,7 @@ class LeadServiceTest {
 
     @Mock LeadRepository leadRepository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock AuditLogRepository auditLogRepository;
     @InjectMocks LeadService leadService;
 
     @Test
@@ -95,7 +99,7 @@ class LeadServiceTest {
         UUID tenantId = UUID.randomUUID();
         Pageable pageable = PageRequest.of(0, 20);
         Page<Lead> page = new PageImpl<>(List.of());
-        when(leadRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, pageable)).thenReturn(page);
+        when(leadRepository.findByTenantId(tenantId, pageable)).thenReturn(page);
 
         Page<Lead> result = leadService.findLeads(tenantId, null, pageable);
 
@@ -129,7 +133,10 @@ class LeadServiceTest {
     }
 
     @Test
-    void updateStatusThrowsAuthorizationExceptionForCrossTenantLead() {
+    void updateStatusThrowsNotFoundForCrossTenantLead() {
+        // RLS scopes findById() to the caller's tenant in production; this app-level check is
+        // defense-in-depth and intentionally returns 404 (not 403) to match RLS's behavior and
+        // avoid leaking cross-tenant lead existence (see review of Story 4-1, AC4).
         UUID ownerTenantId = UUID.randomUUID();
         UUID otherTenantId = UUID.randomUUID();
         Lead lead = Lead.create(ownerTenantId, "Ravi Kumar", "+919876543210",
@@ -137,7 +144,7 @@ class LeadServiceTest {
         when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
 
         assertThatThrownBy(() -> leadService.updateStatus(otherTenantId, lead.getId(), LeadStatus.CONTACTED))
-                .isInstanceOf(AuthorizationException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -148,5 +155,91 @@ class LeadServiceTest {
 
         assertThatThrownBy(() -> leadService.updateStatus(tenantId, leadId, LeadStatus.CONTACTED))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void updateStatusThrowsNotFoundForErasedLead() {
+        UUID tenantId = UUID.randomUUID();
+        Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
+                "phone", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
+        ReflectionTestUtils.setField(lead, "erased", true);
+        when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+
+        assertThatThrownBy(() -> leadService.updateStatus(tenantId, lead.getId(), LeadStatus.CONTACTED))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void exportLeadsReturnsOnlyNonErasedLeads() {
+        UUID tenantId = UUID.randomUUID();
+        Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
+                "phone", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
+        when(leadRepository.findByTenantIdAndErasedFalse(tenantId)).thenReturn(List.of(lead));
+
+        List<Lead> result = leadService.exportLeads(tenantId);
+
+        assertThat(result).containsExactly(lead);
+    }
+
+    @Test
+    void eraseLeadNullsPiiAndWritesAuditLog() {
+        UUID tenantId = UUID.randomUUID();
+        Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
+                "Samsung Galaxy S24", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
+        when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+        when(leadRepository.save(any(Lead.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        leadService.eraseLead(tenantId, lead.getId());
+
+        assertThat(lead.getCustomerName()).isNull();
+        assertThat(lead.getPhone()).isNull();
+        assertThat(lead.getProductIntent()).isEqualTo("Samsung Galaxy S24");
+        assertThat(lead.getErased()).isTrue();
+
+        ArgumentCaptor<AuditLogEntry> captor = ArgumentCaptor.forClass(AuditLogEntry.class);
+        verify(auditLogRepository).save(captor.capture());
+        assertThat(captor.getValue().tenantId()).isEqualTo(tenantId);
+        assertThat(captor.getValue().eventType()).isEqualTo("DATA_ERASED");
+        assertThat(captor.getValue().messageHash()).isEqualTo(lead.getId().toString());
+    }
+
+    @Test
+    void eraseLeadThrowsNotFoundForAlreadyErasedLead() {
+        UUID tenantId = UUID.randomUUID();
+        Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
+                "phone", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
+        ReflectionTestUtils.setField(lead, "erased", true);
+        when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+
+        assertThatThrownBy(() -> leadService.eraseLead(tenantId, lead.getId()))
+                .isInstanceOf(NotFoundException.class);
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    void eraseLeadThrowsNotFoundForCrossTenantLead() {
+        UUID ownerTenantId = UUID.randomUUID();
+        UUID otherTenantId = UUID.randomUUID();
+        Lead lead = Lead.create(ownerTenantId, "Ravi Kumar", "+919876543210",
+                "phone", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
+        when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+
+        assertThatThrownBy(() -> leadService.eraseLead(otherTenantId, lead.getId()))
+                .isInstanceOf(NotFoundException.class);
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    void eraseAllLeadsCallsBulkEraseAndWritesSingleAuditLog() {
+        UUID tenantId = UUID.randomUUID();
+        when(leadRepository.bulkEraseByTenantId(tenantId)).thenReturn(5);
+
+        leadService.eraseAllLeads(tenantId);
+
+        verify(leadRepository).bulkEraseByTenantId(tenantId);
+        ArgumentCaptor<AuditLogEntry> captor = ArgumentCaptor.forClass(AuditLogEntry.class);
+        verify(auditLogRepository).save(captor.capture());
+        assertThat(captor.getValue().tenantId()).isEqualTo(tenantId);
+        assertThat(captor.getValue().eventType()).isEqualTo("DATA_ERASED_BULK");
     }
 }

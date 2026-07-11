@@ -8,8 +8,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -54,6 +56,10 @@ public class Lead {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected Lead() {}
 
     public static Lead create(UUID tenantId, String customerName, String phone,
@@ -86,7 +92,13 @@ public class Lead {
     }
 
     public void updateStatus(LeadStatus newStatus) {
-        this.status = newStatus;
+        this.status = Objects.requireNonNull(newStatus, "newStatus must not be null");
+    }
+
+    public void erase() {
+        this.customerName = null;
+        this.phone = null;
+        this.erased = true;
     }
 
     public UUID getId() { return id; }
