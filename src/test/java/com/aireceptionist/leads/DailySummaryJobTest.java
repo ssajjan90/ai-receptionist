@@ -88,6 +88,7 @@ class DailySummaryJobTest {
         when(whatsAppMessageRepository.countByTenantIdAndSenderTypeAndReceivedAtAfter(
                 eq(tenantId), eq(SenderType.CUSTOMER), any())).thenReturn(5L);
         when(leadRepository.countByTenantIdAndCreatedAtAfter(eq(tenantId), any())).thenReturn(2L);
+        when(leadRepository.countByTenantIdAndErasedFalseAndCreatedAtAfter(eq(tenantId), any())).thenReturn(2L);
         when(leadRepository.findTop5ByTenantIdAndErasedFalseAndCreatedAtAfterOrderByCreatedAtDesc(eq(tenantId), any()))
                 .thenReturn(List.of(lead1, lead2));
         when(auditLogRepository.countByTenantIdAndEventTypeAndOccurredAtAfter(eq(tenantId), any(), any()))
@@ -125,6 +126,7 @@ class DailySummaryJobTest {
         when(whatsAppMessageRepository.countByTenantIdAndSenderTypeAndReceivedAtAfter(
                 eq(tenantId), eq(SenderType.CUSTOMER), any())).thenReturn(10L);
         when(leadRepository.countByTenantIdAndCreatedAtAfter(eq(tenantId), any())).thenReturn(7L);
+        when(leadRepository.countByTenantIdAndErasedFalseAndCreatedAtAfter(eq(tenantId), any())).thenReturn(7L);
         when(leadRepository.findTop5ByTenantIdAndErasedFalseAndCreatedAtAfterOrderByCreatedAtDesc(eq(tenantId), any()))
                 .thenReturn(top5);
         when(auditLogRepository.countByTenantIdAndEventTypeAndOccurredAtAfter(eq(tenantId), any(), any()))
@@ -141,6 +143,41 @@ class DailySummaryJobTest {
     }
 
     @Test
+    void moreIndicatorExcludesErasedLeadsFromTheCount() {
+        // leadCount (headline stat) includes 2 erased leads created in the window, per AC5's
+        // "counted in aggregate statistics"; nonErasedLeadCount (used for the "...and N more" math)
+        // excludes them, so the remainder never counts an erased lead as an undisplayed "more" lead.
+        UUID tenantId = UUID.randomUUID();
+        List<Lead> top5 = List.of(
+                Lead.create(tenantId, "Lead One", "+910000000001", "Product A", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now(FIXED_CLOCK)),
+                Lead.create(tenantId, "Lead Two", "+910000000002", "Product B", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now(FIXED_CLOCK)),
+                Lead.create(tenantId, "Lead Three", "+910000000003", "Product C", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now(FIXED_CLOCK)),
+                Lead.create(tenantId, "Lead Four", "+910000000004", "Product D", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now(FIXED_CLOCK)),
+                Lead.create(tenantId, "Lead Five", "+910000000005", "Product E", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now(FIXED_CLOCK)));
+
+        when(liveTenantsUseCase.getLiveTenantIds()).thenReturn(List.of(tenantId));
+        when(whatsAppMessageRepository.countByTenantIdAndSenderTypeAndReceivedAtAfter(
+                eq(tenantId), eq(SenderType.CUSTOMER), any())).thenReturn(10L);
+        when(leadRepository.countByTenantIdAndCreatedAtAfter(eq(tenantId), any())).thenReturn(8L);
+        when(leadRepository.countByTenantIdAndErasedFalseAndCreatedAtAfter(eq(tenantId), any())).thenReturn(6L);
+        when(leadRepository.findTop5ByTenantIdAndErasedFalseAndCreatedAtAfterOrderByCreatedAtDesc(eq(tenantId), any()))
+                .thenReturn(top5);
+        when(auditLogRepository.countByTenantIdAndEventTypeAndOccurredAtAfter(eq(tenantId), any(), any()))
+                .thenReturn(0L);
+        when(tenantNamePort.getBusinessName(tenantId.toString())).thenReturn(Optional.of("Busy Shop"));
+        when(tenantOwnerPhonePort.getOwnerPhone(tenantId.toString())).thenReturn(Optional.of("+919999999999"));
+
+        DailySummaryJob job = newJob(true);
+        job.sendDailySummaries();
+
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).sendMessage(any(), any(), messageCaptor.capture());
+        String message = messageCaptor.getValue();
+        assertThat(message).contains("New leads captured: 8"); // headline stat stays unfiltered
+        assertThat(message).contains("...and 1 more"); // 6 non-erased - 5 shown, not 8 - 5
+    }
+
+    @Test
     void sanitizesMarkdownControlCharactersInInterpolatedText() {
         UUID tenantId = UUID.randomUUID();
         Lead lead = Lead.create(tenantId, "*URGENT* Ravi", "+919876543210", "_Galaxy_ S24",
@@ -150,6 +187,7 @@ class DailySummaryJobTest {
         when(whatsAppMessageRepository.countByTenantIdAndSenderTypeAndReceivedAtAfter(
                 eq(tenantId), eq(SenderType.CUSTOMER), any())).thenReturn(1L);
         when(leadRepository.countByTenantIdAndCreatedAtAfter(eq(tenantId), any())).thenReturn(1L);
+        when(leadRepository.countByTenantIdAndErasedFalseAndCreatedAtAfter(eq(tenantId), any())).thenReturn(1L);
         when(leadRepository.findTop5ByTenantIdAndErasedFalseAndCreatedAtAfterOrderByCreatedAtDesc(eq(tenantId), any()))
                 .thenReturn(List.of(lead));
         when(auditLogRepository.countByTenantIdAndEventTypeAndOccurredAtAfter(eq(tenantId), any(), any()))

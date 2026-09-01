@@ -3,7 +3,7 @@ package com.aireceptionist.knowledgebase;
 import com.aireceptionist.AbstractIntegrationTest;
 import com.aireceptionist.common.audit.AuditLogEntry;
 import com.aireceptionist.common.audit.AuditLogRepository;
-import com.aireceptionist.knowledgebase.event.UnansweredQueryFlaggedEvent;
+import com.aireceptionist.common.event.UnansweredQueryFlaggedEvent;
 import com.aireceptionist.knowledgebase.repository.KnowledgeEntryRepository;
 import com.aireceptionist.whatsapp.event.OwnerCommandReceivedEvent;
 import org.junit.jupiter.api.BeforeEach;

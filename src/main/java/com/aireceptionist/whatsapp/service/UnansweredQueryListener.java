@@ -1,6 +1,6 @@
 package com.aireceptionist.whatsapp.service;
 
-import com.aireceptionist.knowledgebase.event.UnansweredQueryFlaggedEvent;
+import com.aireceptionist.common.event.UnansweredQueryFlaggedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

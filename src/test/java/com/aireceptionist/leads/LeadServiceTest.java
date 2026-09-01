@@ -204,15 +204,16 @@ class LeadServiceTest {
     }
 
     @Test
-    void eraseLeadThrowsNotFoundForAlreadyErasedLead() {
+    void eraseLeadOnAlreadyErasedLeadIsIdempotentNoOp() {
         UUID tenantId = UUID.randomUUID();
         Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
                 "phone", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
         ReflectionTestUtils.setField(lead, "erased", true);
         when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
 
-        assertThatThrownBy(() -> leadService.eraseLead(tenantId, lead.getId()))
-                .isInstanceOf(NotFoundException.class);
+        leadService.eraseLead(tenantId, lead.getId());
+
+        verify(leadRepository, never()).save(any());
         verify(auditLogRepository, never()).save(any());
     }
 
@@ -230,7 +231,7 @@ class LeadServiceTest {
     }
 
     @Test
-    void eraseAllLeadsCallsBulkEraseAndWritesSingleAuditLog() {
+    void eraseAllLeadsCallsBulkEraseAndWritesSingleAuditLogWithCount() {
         UUID tenantId = UUID.randomUUID();
         when(leadRepository.bulkEraseByTenantId(tenantId)).thenReturn(5);
 
@@ -241,5 +242,17 @@ class LeadServiceTest {
         verify(auditLogRepository).save(captor.capture());
         assertThat(captor.getValue().tenantId()).isEqualTo(tenantId);
         assertThat(captor.getValue().eventType()).isEqualTo("DATA_ERASED_BULK");
+        assertThat(captor.getValue().messageHash()).isEqualTo("5");
+    }
+
+    @Test
+    void eraseAllLeadsSkipsAuditLogWhenNoLeadsWereErased() {
+        UUID tenantId = UUID.randomUUID();
+        when(leadRepository.bulkEraseByTenantId(tenantId)).thenReturn(0);
+
+        leadService.eraseAllLeads(tenantId);
+
+        verify(leadRepository).bulkEraseByTenantId(tenantId);
+        verify(auditLogRepository, never()).save(any());
     }
 }

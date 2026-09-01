@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -34,6 +35,7 @@ class KnowledgeBaseWebCrudTest extends AbstractIntegrationTest {
     @Autowired KnowledgeEntryRepository entryRepository;
     @Autowired StringRedisTemplate redisTemplate;
     @Autowired ObjectMapper objectMapper;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void clearData() {
@@ -43,6 +45,10 @@ class KnowledgeBaseWebCrudTest extends AbstractIntegrationTest {
     @Test
     void createEntryPersistsToDbAndCanBeRetrievedAndDeleted() throws Exception {
         UUID tenantId = UUID.randomUUID();
+        // knowledge_entries.tenant_id has a FK to tenants(id) (V2), so a tenant row must exist first.
+        jdbcTemplate.update(
+                "INSERT INTO tenants (id, business_name, phone_number, tier, status) VALUES (?, ?, ?, 'PRO', 'ACTIVE')",
+                tenantId, "KB Web CRUD Test Business", "+91" + System.nanoTime() % 10_000_000_000L);
         String token = tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
         String base = "/v1/tenants/" + tenantId + "/knowledge-base";
 

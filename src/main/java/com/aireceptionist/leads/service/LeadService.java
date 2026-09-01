@@ -126,7 +126,10 @@ public class LeadService {
         }
 
         if (Boolean.TRUE.equals(lead.getErased())) {
-            throw new NotFoundException("LEAD_NOT_FOUND", "Lead not found");
+            // Idempotent no-op: the requested end state (erased, PII gone) already holds, so a
+            // repeat erasure request (client retry, double-tap in the dashboard) succeeds silently
+            // rather than surfacing as an error.
+            return;
         }
 
         lead.erase();
@@ -139,9 +142,13 @@ public class LeadService {
 
     public void eraseAllLeads(UUID tenantId) {
         int erasedCount = leadRepository.bulkEraseByTenantId(tenantId);
+        if (erasedCount == 0) {
+            log.info("Bulk erase requested for tenant={} but no non-erased leads existed; no-op", tenantId);
+            return;
+        }
 
         auditLogRepository.save(new AuditLogEntry(UUID.randomUUID(), tenantId,
-                AuditEventType.DATA_ERASED_BULK, null, null, Instant.now()));
+                AuditEventType.DATA_ERASED_BULK, null, String.valueOf(erasedCount), Instant.now()));
         log.info("Bulk erased {} leads for tenant={}", erasedCount, tenantId);
     }
 }

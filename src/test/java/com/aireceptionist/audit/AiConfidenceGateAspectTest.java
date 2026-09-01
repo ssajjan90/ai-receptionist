@@ -9,7 +9,7 @@ import com.aireceptionist.common.audit.AuditLogEntry;
 import com.aireceptionist.common.audit.AuditLogRepository;
 import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.common.resilience.FallbackMessageProvider;
-import com.aireceptionist.knowledgebase.event.UnansweredQueryFlaggedEvent;
+import com.aireceptionist.common.event.UnansweredQueryFlaggedEvent;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

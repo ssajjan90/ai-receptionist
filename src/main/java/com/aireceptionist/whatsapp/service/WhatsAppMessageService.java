@@ -7,7 +7,7 @@ import com.aireceptionist.ai.service.IntentDetectionService;
 import com.aireceptionist.ai.service.Language;
 import com.aireceptionist.ai.service.LanguageDetectionService;
 import com.aireceptionist.common.ai.AiResponseResult;
-import com.aireceptionist.common.ai.LlmService;
+import com.aireceptionist.ai.service.LlmService;
 import com.aireceptionist.common.ai.TenantNamePort;
 import com.aireceptionist.common.ai.TenantOwnerPhonePort;
 import com.aireceptionist.common.multitenancy.TenantContext;

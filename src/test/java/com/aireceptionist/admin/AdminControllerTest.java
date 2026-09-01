@@ -1,0 +1,67 @@
+package com.aireceptionist.admin;
+
+import com.aireceptionist.AbstractIntegrationTest;
+import com.aireceptionist.common.security.JwtTokenProvider;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@AutoConfigureMockMvc
+class AdminControllerTest extends AbstractIntegrationTest {
+
+    @Autowired MockMvc mockMvc;
+    @Autowired JwtTokenProvider tokenProvider;
+    @Autowired JdbcTemplate jdbcTemplate;
+
+    private UUID seedTenant() {
+        UUID tenantId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO tenants (id, business_name, phone_number, tier, status) VALUES (?, ?, ?, 'PRO', 'ACTIVE')",
+                tenantId, "Admin Test Business", "+91" + System.nanoTime() % 10_000_000_000L);
+        return tenantId;
+    }
+
+    @Test
+    void ownerRoleIsForbiddenFromAdminEndpoints() throws Exception {
+        UUID tenantId = seedTenant();
+        String ownerToken = tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
+
+        mockMvc.perform(get("/v1/admin/tenants").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void platformAdminCanListTenants() throws Exception {
+        seedTenant();
+        UUID adminUserId = UUID.randomUUID();
+        String adminToken = tokenProvider.generateToken(UUID.randomUUID().toString(), adminUserId.toString(),
+                "PLATFORM_ADMIN", "PRO");
+
+        mockMvc.perform(get("/v1/admin/tenants").header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void adminAccessIsWrittenToAdminAccessLog() throws Exception {
+        seedTenant();
+        UUID adminUserId = UUID.randomUUID();
+        String adminToken = tokenProvider.generateToken(UUID.randomUUID().toString(), adminUserId.toString(),
+                "PLATFORM_ADMIN", "PRO");
+
+        mockMvc.perform(get("/v1/admin/tenants").header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM admin_access_log WHERE admin_user_id = ? AND event_type = 'ADMIN_ACCESS'",
+                Long.class, adminUserId);
+        assertThat(count).isEqualTo(1L);
+    }
+}

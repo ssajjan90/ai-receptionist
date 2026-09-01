@@ -43,7 +43,7 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
     public Connection getConnection(String tenantIdentifier) throws SQLException {
         Connection connection = getAnyConnection();
         if (tenantIdentifier != null && !TenantIdentifierResolver.DEFAULT_TENANT.equals(tenantIdentifier)) {
-            try (PreparedStatement stmt = connection.prepareStatement("SET app.current_tenant = ?")) {
+            try (PreparedStatement stmt = connection.prepareStatement("SELECT set_config('app.current_tenant', ?, false)")) {
                 stmt.setString(1, tenantIdentifier);
                 stmt.execute();
             } catch (SQLException e) {

@@ -8,6 +8,7 @@ import com.aireceptionist.leads.repository.LeadRepository;
 import com.aireceptionist.leads.service.LeadService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.List;
@@ -19,12 +20,18 @@ class LeadExportTest extends AbstractIntegrationTest {
 
     @Autowired LeadService leadService;
     @Autowired LeadRepository leadRepository;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @Test
     void exportReturnsOnlyNonErasedLeadsWithAllFields() {
         UUID tenantId = UUID.randomUUID();
         UUID active1Id;
         UUID active2Id;
+
+        // leads.tenant_id has a FK to tenants(id) (V3), so a tenant row must exist first.
+        jdbcTemplate.update(
+                "INSERT INTO tenants (id, business_name, phone_number, tier, status) VALUES (?, ?, ?, 'PRO', 'ACTIVE')",
+                tenantId, "Export Test Business", "+91" + System.nanoTime() % 10_000_000_000L);
 
         TenantContext.setCurrentTenant(tenantId.toString());
         try {

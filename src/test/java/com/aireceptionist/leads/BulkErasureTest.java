@@ -11,6 +11,7 @@ import com.aireceptionist.leads.service.LeadService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -24,11 +25,17 @@ class BulkErasureTest extends AbstractIntegrationTest {
     @Autowired LeadService leadService;
     @Autowired LeadRepository leadRepository;
     @Autowired AuditLogRepository auditLogRepository;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     @Test
     void eraseAllNullsPiiForEveryLeadAndWritesSingleAuditLogEntry() {
         UUID tenantId = UUID.randomUUID();
         Instant before = Instant.now().minus(1, ChronoUnit.MINUTES);
+
+        // leads.tenant_id has a FK to tenants(id) (V3), so a tenant row must exist first.
+        jdbcTemplate.update(
+                "INSERT INTO tenants (id, business_name, phone_number, tier, status) VALUES (?, ?, ?, 'PRO', 'ACTIVE')",
+                tenantId, "Bulk Erasure Test Business", "+91" + System.nanoTime() % 10_000_000_000L);
 
         TenantContext.setCurrentTenant(tenantId.toString());
         try {

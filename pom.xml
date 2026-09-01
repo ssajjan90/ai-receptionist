@@ -31,7 +31,7 @@
 		<spring-cloud.version>2025.1.1</spring-cloud.version>
 		<spring-modulith.version>2.0.6</spring-modulith.version>
 		<spring-ai.version>1.0.0</spring-ai.version>
-		<testcontainers.version>1.21.0</testcontainers.version>
+		<testcontainers.version>1.21.4</testcontainers.version>
 	</properties>
 	<dependencies>
 		<dependency>

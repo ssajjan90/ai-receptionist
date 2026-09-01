@@ -3,6 +3,7 @@ package com.aireceptionist.knowledgebase.service;
 import com.aireceptionist.common.exception.AuthorizationException;
 import com.aireceptionist.common.exception.BusinessRuleException;
 import com.aireceptionist.common.exception.NotFoundException;
+import com.aireceptionist.common.exception.ValidationException;
 import com.aireceptionist.knowledgebase.domain.EntryType;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
 import com.aireceptionist.knowledgebase.dto.CreateKnowledgeEntryRequest;
@@ -172,44 +173,72 @@ public class KnowledgeBaseService {
     }
 
     public KnowledgeEntry createEntry(UUID tenantId, CreateKnowledgeEntryRequest request) {
-        if (request.type() == EntryType.PRODUCT) {
-            if (request.productName() == null || request.productName().isBlank()
-                    || request.price() == null || request.price().isBlank()) {
-                throw new com.aireceptionist.common.exception.ValidationException(
-                        "VALIDATION_ERROR", "productName and price are required for PRODUCT entries.");
-            }
-            conflictDetectionService.checkConflict(tenantId, request.productName(), request.price())
+        return switch (request.type()) {
+            case PRODUCT -> createProductEntry(tenantId, request);
+            case FAQ -> createFaqEntry(tenantId, request);
+            case SERVICE -> throw new ValidationException(
+                    "VALIDATION_ERROR", "SERVICE entries are not yet supported for web creation.");
+        };
+    }
+
+    private KnowledgeEntry createProductEntry(UUID tenantId, CreateKnowledgeEntryRequest request) {
+        if (request.productName() == null || request.productName().isBlank()
+                || request.price() == null || request.price().isBlank()) {
+            throw new ValidationException(
+                    "VALIDATION_ERROR", "productName and price are required for PRODUCT entries.");
+        }
+        String productName = request.productName().trim();
+        String price = request.price().trim();
+        repository.findByTenantIdAndTypeAndProductName(tenantId, EntryType.PRODUCT, productName)
+                .ifPresent(existing -> {
+                    throw new BusinessRuleException("KB_CONFLICT",
+                            "Product '" + productName + "' already exists with price '"
+                                    + existing.getPrice() + "'.");
+                });
+        KnowledgeEntry entry = KnowledgeEntry.product(tenantId, productName, price, WEB_SOURCE);
+        repository.save(entry);
+        eventPublisher.publishEvent(new KnowledgeEntryAddedEvent(tenantId, 1));
+        publishKbUpdateEvent(tenantId.toString());
+        return entry;
+    }
+
+    private KnowledgeEntry createFaqEntry(UUID tenantId, CreateKnowledgeEntryRequest request) {
+        if (request.question() == null || request.question().isBlank()
+                || request.answer() == null || request.answer().isBlank()) {
+            throw new ValidationException(
+                    "VALIDATION_ERROR", "question and answer are required for FAQ entries.");
+        }
+        String question = request.question().trim();
+        repository.findByTenantIdAndTypeAndQuestion(tenantId, EntryType.FAQ, question)
+                .ifPresent(existing -> {
+                    throw new BusinessRuleException("KB_CONFLICT",
+                            "FAQ entry for '" + question + "' already exists.");
+                });
+        KnowledgeEntry entry = KnowledgeEntry.faq(tenantId, question, request.answer().trim(), WEB_SOURCE);
+        repository.save(entry);
+        eventPublisher.publishEvent(new KnowledgeEntryAddedEvent(tenantId, 1));
+        publishKbUpdateEvent(tenantId.toString());
+        return entry;
+    }
+
+    public KnowledgeEntry updateEntry(UUID tenantId, UUID entryId, UpdateKnowledgeEntryRequest request) {
+        KnowledgeEntry entry = repository.findById(entryId)
+                .orElseThrow(() -> new NotFoundException("KB entry " + entryId + " not found."));
+        if (!tenantId.equals(entry.getTenantId())) {
+            throw new AuthorizationException("FORBIDDEN", "Tenant access is forbidden.");
+        }
+        String price = request.price() != null ? request.price().trim() : null;
+        String productName = request.productName() != null ? request.productName().trim() : null;
+        if (entry.getType() == EntryType.PRODUCT && price != null && !price.isBlank()) {
+            String checkName = (productName != null && !productName.isBlank()) ? productName : entry.getProductName();
+            conflictDetectionService.checkConflict(tenantId, checkName, price, entryId)
                     .ifPresent(conflict -> {
                         throw new BusinessRuleException("KB_CONFLICT",
                                 "Product '" + conflict.productName() + "' already exists with price '"
                                         + conflict.existingPrice() + "'.");
                     });
-            KnowledgeEntry entry = KnowledgeEntry.product(tenantId, request.productName(), request.price(), WEB_SOURCE);
-            repository.save(entry);
-            eventPublisher.publishEvent(new KnowledgeEntryAddedEvent(tenantId, 1));
-            publishKbUpdateEvent(tenantId.toString());
-            return entry;
-        } else {
-            if (request.question() == null || request.question().isBlank()
-                    || request.answer() == null || request.answer().isBlank()) {
-                throw new com.aireceptionist.common.exception.ValidationException(
-                        "VALIDATION_ERROR", "question and answer are required for FAQ entries.");
-            }
-            KnowledgeEntry entry = KnowledgeEntry.faq(tenantId, request.question(), request.answer(), WEB_SOURCE);
-            repository.save(entry);
-            eventPublisher.publishEvent(new KnowledgeEntryAddedEvent(tenantId, 1));
-            publishKbUpdateEvent(tenantId.toString());
-            return entry;
         }
-    }
-
-    public KnowledgeEntry updateEntry(UUID tenantId, UUID entryId, UpdateKnowledgeEntryRequest request) {
-        KnowledgeEntry entry = repository.findById(entryId)
-                .orElseThrow(() -> new NotFoundException("KB entry not found."));
-        if (!tenantId.equals(entry.getTenantId())) {
-            throw new AuthorizationException("FORBIDDEN", "Tenant access is forbidden.");
-        }
-        entry.update(request.productName(), request.question(), request.answer(), request.price(), WEB_SOURCE);
+        entry.update(productName, request.question(), request.answer(), price, WEB_SOURCE);
         repository.save(entry);
         eventPublisher.publishEvent(new KnowledgeEntryAddedEvent(tenantId, 1));
         publishKbUpdateEvent(tenantId.toString());
@@ -218,7 +247,7 @@ public class KnowledgeBaseService {
 
     public void deleteEntryById(UUID tenantId, UUID entryId) {
         KnowledgeEntry entry = repository.findById(entryId)
-                .orElseThrow(() -> new NotFoundException("KB entry not found."));
+                .orElseThrow(() -> new NotFoundException("KB entry " + entryId + " not found."));
         if (!tenantId.equals(entry.getTenantId())) {
             throw new AuthorizationException("FORBIDDEN", "Tenant access is forbidden.");
         }

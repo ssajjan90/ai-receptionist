@@ -21,12 +21,14 @@ public interface LeadRepository extends JpaRepository<Lead, UUID> {
 
     long countByTenantIdAndCreatedAtAfter(UUID tenantId, Instant since);
 
+    long countByTenantIdAndErasedFalseAndCreatedAtAfter(UUID tenantId, Instant since);
+
     List<Lead> findTop5ByTenantIdAndErasedFalseAndCreatedAtAfterOrderByCreatedAtDesc(UUID tenantId, Instant since);
 
     List<Lead> findByTenantIdAndErasedFalse(UUID tenantId);
 
     @Modifying
-    @Query("UPDATE Lead l SET l.erased = true, l.customerName = null, l.phone = null, l.updatedAt = CURRENT_TIMESTAMP "
-            + "WHERE l.tenantId = :tenantId AND l.erased = false")
+    @Query("UPDATE Lead l SET l.erased = true, l.customerName = null, l.phone = null, l.version = l.version + 1, "
+            + "l.updatedAt = CURRENT_TIMESTAMP WHERE l.tenantId = :tenantId AND l.erased = false")
     int bulkEraseByTenantId(@Param("tenantId") UUID tenantId);
 }

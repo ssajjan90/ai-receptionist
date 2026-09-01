@@ -59,6 +59,12 @@ public class TenantRegistrationService implements RegisterTenantUseCase, VerifyT
         if (tenantRepository.existsByEmail(request.email())) {
             throw new BusinessRuleException("EMAIL_ALREADY_REGISTERED", "Email is already registered.");
         }
+        if (tenantRepository.existsByOwnerPhone(request.ownerPhone())) {
+            throw new BusinessRuleException("PHONE_ALREADY_REGISTERED", "Owner phone is already registered.");
+        }
+        if (tenantRepository.existsByBusinessPhone(request.businessPhone())) {
+            throw new BusinessRuleException("PHONE_ALREADY_REGISTERED", "Business phone is already registered.");
+        }
 
         BusinessTenant tenant = BusinessTenant.register(
                 request.businessName(),

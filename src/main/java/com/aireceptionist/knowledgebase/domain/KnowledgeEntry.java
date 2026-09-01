@@ -100,16 +100,40 @@ public class KnowledgeEntry {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Applies PATCH-semantics field updates from a web edit. Field application is gated by the
+     * entry's own {@code type}: {@code productName}/{@code price} only apply to PRODUCT entries,
+     * {@code question}/{@code answer} only apply to FAQ entries — sending a PRODUCT-only field
+     * against a FAQ entry (or vice versa) is a no-op rather than corrupting the wrong field.
+     * {@code source}/{@code updatedAt} are only touched when a field actually changed, so a
+     * no-op request doesn't discard the entry's existing provenance.
+     */
     public void update(String productName, String question, String answer, String price, String source) {
-        if (productName != null) this.productName = productName;
-        if (question != null) this.question = question;
-        if (answer != null) this.answer = answer;
-        if (price != null) {
-            this.price = price;
-            this.answer = price;
+        boolean changed = false;
+        if (this.type == EntryType.PRODUCT) {
+            if (productName != null && !productName.isBlank() && !productName.equals(this.productName)) {
+                this.productName = productName;
+                changed = true;
+            }
+            if (price != null && !price.isBlank() && !price.equals(this.price)) {
+                this.price = price;
+                this.answer = price;
+                changed = true;
+            }
+        } else {
+            if (question != null && !question.isBlank() && !question.equals(this.question)) {
+                this.question = question;
+                changed = true;
+            }
+            if (answer != null && !answer.isBlank() && !answer.equals(this.answer)) {
+                this.answer = answer;
+                changed = true;
+            }
         }
-        this.source = source;
-        this.updatedAt = Instant.now();
+        if (changed) {
+            this.source = source;
+            this.updatedAt = Instant.now();
+        }
     }
 
     public static KnowledgeEntry faq(UUID tenantId, String question, String answer, String source) {

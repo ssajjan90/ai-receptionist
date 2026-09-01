@@ -1,9 +1,9 @@
-package com.aireceptionist.common.ai;
+package com.aireceptionist.ai.service;
 
 import com.aireceptionist.ai.dto.ConversationTurn;
-import com.aireceptionist.ai.service.ConversationContextService;
-import com.aireceptionist.ai.service.Language;
-import com.aireceptionist.ai.service.PromptAssembler;
+import com.aireceptionist.common.ai.AiChatPort;
+import com.aireceptionist.common.ai.AiResponse;
+import com.aireceptionist.common.ai.AiResponseResult;
 import com.aireceptionist.common.resilience.FallbackMessageProvider;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
 import com.aireceptionist.knowledgebase.service.KnowledgeBaseService;
@@ -21,6 +21,14 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
+// Relocated from common.ai (code review of story 5-1's AdminModuleTest, 2026-09-01): this
+// orchestrates AI response generation using ai.service's own collaborators (ConversationContextService,
+// PromptAssembler, Language) plus knowledgebase — it's ai-domain orchestration, not shared common
+// infrastructure. Living in common.ai while depending on ai.service created a module cycle
+// (ai -> common via SpringAiChatAdapter implementing AiChatPort, common -> ai via this class),
+// which Spring Modulith flags as a violation. common.ai now holds only the port/DTO contracts
+// (AiChatPort, AiResponseResult, AiResponse, TenantNamePort, TenantOwnerPhonePort) that other
+// modules implement/consume — no orchestration logic depending on ai.service. See deferred W82.
 @Service
 public class LlmService {
 

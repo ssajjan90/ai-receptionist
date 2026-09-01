@@ -1,6 +1,6 @@
 package com.aireceptionist.ai;
 
-import com.aireceptionist.knowledgebase.event.UnansweredQueryFlaggedEvent;
+import com.aireceptionist.common.event.UnansweredQueryFlaggedEvent;
 import com.aireceptionist.whatsapp.service.UnansweredQueryListener;
 import com.aireceptionist.whatsapp.service.WhatsAppNotificationService;
 import com.fasterxml.jackson.databind.ObjectMapper;

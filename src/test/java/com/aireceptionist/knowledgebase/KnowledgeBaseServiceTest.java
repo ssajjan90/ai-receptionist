@@ -1,7 +1,12 @@
 package com.aireceptionist.knowledgebase;
 
+import com.aireceptionist.common.exception.BusinessRuleException;
+import com.aireceptionist.common.exception.ValidationException;
 import com.aireceptionist.knowledgebase.domain.EntryType;
 import com.aireceptionist.knowledgebase.domain.KnowledgeEntry;
+import com.aireceptionist.knowledgebase.dto.ConflictInfo;
+import com.aireceptionist.knowledgebase.dto.CreateKnowledgeEntryRequest;
+import com.aireceptionist.knowledgebase.dto.UpdateKnowledgeEntryRequest;
 import com.aireceptionist.knowledgebase.event.KnowledgeEntryAddedEvent;
 import com.aireceptionist.knowledgebase.repository.KnowledgeEntryRepository;
 import com.aireceptionist.knowledgebase.service.ConflictDetectionService;
@@ -21,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -98,5 +104,104 @@ class KnowledgeBaseServiceTest {
         service.bulkUpsertProducts(tenantId, List.of(new ProductKnowledgeEntry("Tea", "25")));
 
         verify(repository).delete(coffee);
+    }
+
+    @Test
+    void createEntryRejectsDuplicateProductNameEvenWithSamePrice() {
+        UUID tenantId = UUID.randomUUID();
+        KnowledgeEntry existing = KnowledgeEntry.product(tenantId, "Tea", "20", "WEB");
+        when(repository.findByTenantIdAndTypeAndProductName(tenantId, EntryType.PRODUCT, "Tea"))
+                .thenReturn(Optional.of(existing));
+
+        CreateKnowledgeEntryRequest request = new CreateKnowledgeEntryRequest(EntryType.PRODUCT, "Tea", null, null, "20");
+
+        assertThatThrownBy(() -> service.createEntry(tenantId, request))
+                .isInstanceOf(BusinessRuleException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createEntryRejectsDuplicateFaqQuestion() {
+        UUID tenantId = UUID.randomUUID();
+        KnowledgeEntry existing = KnowledgeEntry.faq(tenantId, "What are your hours?", "9-5", "WEB");
+        when(repository.findByTenantIdAndTypeAndQuestion(tenantId, EntryType.FAQ, "What are your hours?"))
+                .thenReturn(Optional.of(existing));
+
+        CreateKnowledgeEntryRequest request = new CreateKnowledgeEntryRequest(
+                EntryType.FAQ, null, "What are your hours?", "10-6", null);
+
+        assertThatThrownBy(() -> service.createEntry(tenantId, request))
+                .isInstanceOf(BusinessRuleException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void createEntryRejectsServiceType() {
+        UUID tenantId = UUID.randomUUID();
+        CreateKnowledgeEntryRequest request = new CreateKnowledgeEntryRequest(EntryType.SERVICE, null, null, null, null);
+
+        assertThatThrownBy(() -> service.createEntry(tenantId, request))
+                .isInstanceOf(ValidationException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void updateEntryOnFaqIgnoresPriceFieldWithoutCorruptingAnswer() {
+        UUID tenantId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        KnowledgeEntry faqEntry = KnowledgeEntry.faq(tenantId, "What are your hours?", "9-5", "WEB");
+        when(repository.findById(entryId)).thenReturn(Optional.of(faqEntry));
+
+        UpdateKnowledgeEntryRequest request = new UpdateKnowledgeEntryRequest(null, null, null, "999");
+        service.updateEntry(tenantId, entryId, request);
+
+        assertThat(faqEntry.getAnswer()).isEqualTo("9-5");
+        assertThat(faqEntry.getPrice()).isNull();
+    }
+
+    @Test
+    void updateEntryOnProductChecksConflictExcludingItself() {
+        UUID tenantId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        KnowledgeEntry productEntry = KnowledgeEntry.product(tenantId, "Tea", "20", "WEB");
+        when(repository.findById(entryId)).thenReturn(Optional.of(productEntry));
+        when(conflictDetectionService.checkConflict(tenantId, "Tea", "30", entryId))
+                .thenReturn(Optional.empty());
+
+        UpdateKnowledgeEntryRequest request = new UpdateKnowledgeEntryRequest(null, null, null, "30");
+        service.updateEntry(tenantId, entryId, request);
+
+        assertThat(productEntry.getPrice()).isEqualTo("30");
+        assertThat(productEntry.getAnswer()).isEqualTo("30");
+        verify(conflictDetectionService).checkConflict(tenantId, "Tea", "30", entryId);
+    }
+
+    @Test
+    void updateEntryRejectsPriceThatConflictsWithAnotherProduct() {
+        UUID tenantId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        KnowledgeEntry productEntry = KnowledgeEntry.product(tenantId, "Tea", "20", "WEB");
+        when(repository.findById(entryId)).thenReturn(Optional.of(productEntry));
+        when(conflictDetectionService.checkConflict(tenantId, "Tea", "999", entryId))
+                .thenReturn(Optional.of(new ConflictInfo("Tea", "20", "999")));
+
+        UpdateKnowledgeEntryRequest request = new UpdateKnowledgeEntryRequest(null, null, null, "999");
+
+        assertThatThrownBy(() -> service.updateEntry(tenantId, entryId, request))
+                .isInstanceOf(BusinessRuleException.class);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void updateEntryNoOpRequestDoesNotOverwriteSource() {
+        UUID tenantId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        KnowledgeEntry productEntry = KnowledgeEntry.product(tenantId, "Tea", "20", "OCR");
+        when(repository.findById(entryId)).thenReturn(Optional.of(productEntry));
+
+        UpdateKnowledgeEntryRequest request = new UpdateKnowledgeEntryRequest(null, null, null, null);
+        service.updateEntry(tenantId, entryId, request);
+
+        assertThat(productEntry.getSource()).isEqualTo("OCR");
     }
 }

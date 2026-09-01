@@ -22,8 +22,6 @@ spring:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
-    # required for CREATE INDEX CONCURRENTLY migrations (V19, V21), which cannot run inside a transaction
-    mixed: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}

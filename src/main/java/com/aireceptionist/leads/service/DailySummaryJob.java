@@ -90,6 +90,7 @@ public class DailySummaryJob {
             }
 
             long leadCount = leadRepository.countByTenantIdAndCreatedAtAfter(tenantId, since);
+            long nonErasedLeadCount = leadRepository.countByTenantIdAndErasedFalseAndCreatedAtAfter(tenantId, since);
             List<Lead> newLeads = leadRepository.findTop5ByTenantIdAndErasedFalseAndCreatedAtAfterOrderByCreatedAtDesc(tenantId, since);
             long unansweredCount = auditLogRepository.countByTenantIdAndEventTypeAndOccurredAtAfter(
                     tenantId, AuditEventType.AUDIT_LOW_CONFIDENCE, since);
@@ -102,7 +103,7 @@ public class DailySummaryJob {
             }
             String shopName = tenantNamePort.getBusinessName(tenantIdStr).orElse("your business");
 
-            String message = buildSummaryMessage(shopName, totalMessages, leadCount, unansweredCount, newLeads);
+            String message = buildSummaryMessage(shopName, totalMessages, leadCount, nonErasedLeadCount, unansweredCount, newLeads);
             notificationService.sendMessage(tenantIdStr, ownerPhone, message);
             log.info("Daily summary sent for tenant={} messages={} leads={} unanswered={}",
                     tenantId, totalMessages, leadCount, unansweredCount);
@@ -111,7 +112,7 @@ public class DailySummaryJob {
         }
     }
 
-    private String buildSummaryMessage(String shopName, long totalMessages, long leadCount,
+    private String buildSummaryMessage(String shopName, long totalMessages, long leadCount, long nonErasedLeadCount,
                                        long unansweredCount, List<Lead> newLeads) {
         StringBuilder sb = new StringBuilder();
         sb.append("📊 *Daily Summary — ").append(sanitize(shopName)).append("*\n\n");
@@ -127,8 +128,10 @@ public class DailySummaryJob {
                 String product = lead.getProductIntent() != null ? lead.getProductIntent() : "general enquiry";
                 sb.append("• ").append(sanitize(name)).append(" — interested in ").append(sanitize(product)).append('\n');
             }
-            if (leadCount > newLeads.size()) {
-                sb.append("...and ").append(leadCount - newLeads.size()).append(" more\n");
+            // Uses the non-erased count (not the unfiltered leadCount headline stat above) so the
+            // remainder never counts an erased lead as an undisplayed "more" lead.
+            if (nonErasedLeadCount > newLeads.size()) {
+                sb.append("...and ").append(nonErasedLeadCount - newLeads.size()).append(" more\n");
             }
         }
 

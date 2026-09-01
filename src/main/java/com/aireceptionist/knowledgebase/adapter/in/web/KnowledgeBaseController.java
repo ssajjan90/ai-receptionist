@@ -21,6 +21,7 @@ import com.aireceptionist.knowledgebase.service.ProductKnowledgeEntry;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -122,7 +123,7 @@ public class KnowledgeBaseController extends VersionedRestController {
     public ApiResponse<Page<KnowledgeEntryResponse>> listEntries(
             @PathVariable UUID tenantId,
             @RequestParam(required = false) EntryType type,
-            @PageableDefault(size = 20, sort = "createdAt") Pageable pageable,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             Authentication authentication) {
         validateTenantOwnership(tenantId, authentication);
         Page<KnowledgeEntryResponse> page = knowledgeBaseService
