@@ -1,11 +1,10 @@
 package com.aireceptionist.admin;
 
 import com.aireceptionist.AbstractModuleTest;
-import org.springframework.modulith.test.ApplicationModuleTest;
 
-// verifyAutomatically = false: full-app structural verification runs via the inherited
-// moduleBoundaryCompliance() test in AbstractModuleTest, which tolerates one documented
-// exception (the leads<->whatsapp cycle). See deferred W82.
-@ApplicationModuleTest(verifyAutomatically = false)
+// Full structural verification (with one documented exception: the leads<->whatsapp cycle) runs
+// via the inherited moduleBoundaryCompliance() test in AbstractModuleTest -- pure static analysis,
+// no Spring context needed. See deferred W82; see AbstractModuleTest for why this is no longer
+// @ApplicationModuleTest (story 5.2's AdminModuleTest bean-wiring break under cross-module deps).
 class AdminModuleTest extends AbstractModuleTest {
 }

@@ -5,6 +5,7 @@ import com.aireceptionist.common.exception.BusinessRuleException;
 import com.aireceptionist.tenant.application.TenantWhatsAppConnectionService;
 import com.aireceptionist.tenant.domain.BusinessTenant;
 import com.aireceptionist.tenant.port.in.ConnectTenantWhatsAppCommand;
+import com.aireceptionist.tenant.port.in.TenantDataRightsUseCase;
 import com.aireceptionist.tenant.port.out.TenantRegistrationRepository;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +23,9 @@ import static org.mockito.Mockito.when;
 class WhatsAppConnectionServiceTest {
 
     private final TenantRegistrationRepository tenantRepository = mock(TenantRegistrationRepository.class);
-    private final TenantWhatsAppConnectionService service = new TenantWhatsAppConnectionService(tenantRepository);
+    private final TenantDataRightsUseCase tenantDataRightsUseCase = mock(TenantDataRightsUseCase.class);
+    private final TenantWhatsAppConnectionService service =
+            new TenantWhatsAppConnectionService(tenantRepository, tenantDataRightsUseCase);
 
     @Test
     void connectWhatsAppRejectsWrongOnboardingStep() {

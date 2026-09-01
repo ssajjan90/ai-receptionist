@@ -49,6 +49,10 @@ class LeadErasureTest extends AbstractIntegrationTest {
             assertThat(reloaded.getPhone()).isNull();
             assertThat(reloaded.getProductIntent()).isEqualTo("Samsung Galaxy S24");
             assertThat(reloaded.getErased()).isTrue();
+            // Story 5.3: phoneHash survives erase() — it's the only remaining link the admin
+            // conversation viewer can use to detect and redact this lead's WhatsApp messages.
+            assertThat(reloaded.getPhoneHash())
+                    .isEqualTo("f3a47ce5ce3d4ca8ad15225a245b2759022f79489f5c62719b8c9490f7aab90e");
 
             List<Lead> exported = leadService.exportLeads(tenantId);
             assertThat(exported).extracting(Lead::getId).doesNotContain(leadId);

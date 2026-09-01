@@ -1,6 +1,5 @@
 package com.aireceptionist.tenant.port.in;
 
-import com.aireceptionist.tenant.domain.TenantDataExport;
 
 import java.util.UUID;
 

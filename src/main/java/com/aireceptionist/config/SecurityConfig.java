@@ -36,7 +36,13 @@ public class SecurityConfig {
                     .requestMatchers("/v1/tenants/register", "/v1/tenants/verify-otp",
                             "/v1/tenants/resend-otp", "/webhooks/**", "/actuator/health", "/actuator/info",
                             "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                    .requestMatchers("/v1/admin/**").hasRole("PLATFORM_ADMIN")
+                    // /v1/admin/** role enforcement intentionally lives in @PreAuthorize on
+                    // AdminController, not here: a filter-chain-level requestMatcher rejects
+                    // before DispatcherServlet ever dispatches, bypassing GlobalExceptionHandler
+                    // and breaking the app's ApiResponse envelope for the 403 body. Leaving
+                    // /v1/admin/** to fall through to .anyRequest().authenticated() below still
+                    // requires authentication; @PreAuthorize then enforces the role with a
+                    // consistent response (see code review of story 5-1, 2026-09-01).
                     .anyRequest().authenticated())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterAfter(rateLimitFilter, UsernamePasswordAuthenticationFilter.class);

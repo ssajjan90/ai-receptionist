@@ -11,6 +11,7 @@ import com.aireceptionist.ai.service.LlmService;
 import com.aireceptionist.common.ai.TenantNamePort;
 import com.aireceptionist.common.ai.TenantOwnerPhonePort;
 import com.aireceptionist.common.multitenancy.TenantContext;
+import com.aireceptionist.tenant.port.in.GetTenantStatusUseCase;
 import com.aireceptionist.whatsapp.domain.WhatsAppMessage;
 import com.aireceptionist.whatsapp.event.FrustrationDetectedEvent;
 import com.aireceptionist.whatsapp.event.InboundWhatsAppMessageEvent;
@@ -30,6 +31,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,6 +51,15 @@ public class WhatsAppMessageService {
             "By sharing your details, you agree we may contact you about your enquiry regarding %s.\n\n" +
             "Please reply with your name and phone number, or type 'No' if you'd prefer not to share.";
 
+    // Story 5.2 (AC1, AC6): suspended tenants get a fixed "unavailable" reply, no AI processing.
+    private static final String SERVICE_UNAVAILABLE_MESSAGE =
+            "This service is temporarily unavailable. Please try again later.";
+
+    // Code review (2026-09-01): TERMINATED/ERASED added alongside SUSPENDED/PAYMENT_SUSPENDED —
+    // see the comment at the call site for why this guard must cover every non-LIVE status.
+    private static final Set<String> NON_LIVE_BLOCKED_STATUSES =
+            Set.of("SUSPENDED", "PAYMENT_SUSPENDED", "TERMINATED", "ERASED");
+
     private final WhatsAppMessageRepository messageRepository;
     private final LanguageDetectionService languageDetectionService;
     private final LlmService llmService;
@@ -58,6 +69,7 @@ public class WhatsAppMessageService {
     private final TenantOwnerPhonePort tenantOwnerPhonePort;
     private final FrustrationDetectionService frustrationDetectionService;
     private final IntentDetectionService intentDetectionService;
+    private final GetTenantStatusUseCase getTenantStatusUseCase;
     private final ApplicationEventPublisher eventPublisher;
     private final StringRedisTemplate redisTemplate;
 
@@ -70,6 +82,7 @@ public class WhatsAppMessageService {
                                   TenantOwnerPhonePort tenantOwnerPhonePort,
                                   FrustrationDetectionService frustrationDetectionService,
                                   IntentDetectionService intentDetectionService,
+                                  GetTenantStatusUseCase getTenantStatusUseCase,
                                   ApplicationEventPublisher eventPublisher,
                                   StringRedisTemplate redisTemplate) {
         this.messageRepository = messageRepository;
@@ -81,6 +94,7 @@ public class WhatsAppMessageService {
         this.tenantOwnerPhonePort = tenantOwnerPhonePort;
         this.frustrationDetectionService = frustrationDetectionService;
         this.intentDetectionService = intentDetectionService;
+        this.getTenantStatusUseCase = getTenantStatusUseCase;
         this.eventPublisher = eventPublisher;
         this.redisTemplate = redisTemplate;
     }
@@ -91,8 +105,45 @@ public class WhatsAppMessageService {
         TenantContext.setCurrentTenant(tenantId);
         MDC.put("tenantId", tenantId);
         try {
-            String messageText = event.getMessageText();
             String senderPhone = event.getSenderPhone();
+
+            // Story 5.2 (AC1, AC6): non-LIVE tenants get a fixed reply, no AI processing — mirrors
+            // GetLiveTenantsUseCase already excluding non-LIVE tenants from the queued-message
+            // processor (WhatsAppQueueProcessor), applied here for the synchronous inbound-event
+            // path. The inbound webhook (WhatsAppWebhookController) resolves and routes purely by
+            // phone number with no status check, so this guard is the only gate for the
+            // synchronous path — SUSPENDED/PAYMENT_SUSPENDED (temporary) and TERMINATED/ERASED
+            // (terminal, see BusinessTenant.terminate()) all need to be blocked here (code review,
+            // 2026-09-01). The reply is persisted the same way every other outbound message in this
+            // method is, for auditability/testability — not a real AI response, but reusing the
+            // existing outboundAi() record shape rather than a new, unverified path (see deferred W96).
+            //
+            // status is null whenever getStatus() finds no matching tenant (Optional.empty()) — a
+            // real, reachable case (a tenant not yet fully provisioned, or — as found via story 5.3's
+            // regression run — plenty of pre-existing tests that publish this event without seeding a
+            // tenant row at all). Set.of(...).contains(null) THROWS NullPointerException rather than
+            // returning false; since this whole method runs as an async @ApplicationModuleListener,
+            // that NPE was being silently swallowed, silently dropping the message entirely. Found
+            // and fixed 2026-09-01 (story 5.3 regression) — null must short-circuit before the set
+            // lookup.
+            String status = getTenantStatusUseCase.getStatus(event.getTenantIdValue()).orElse(null);
+            if (status != null && NON_LIVE_BLOCKED_STATUSES.contains(status)) {
+                log.info("Rejecting inbound message for {} tenant={}", status, tenantId);
+                WhatsAppMessage unavailable = WhatsAppMessage.outboundAi(
+                        event.getTenantIdValue(), senderPhone, SERVICE_UNAVAILABLE_MESSAGE, 1.0, "en");
+                messageRepository.save(unavailable);
+                try {
+                    notificationService.sendMessage(tenantId, senderPhone, SERVICE_UNAVAILABLE_MESSAGE);
+                    unavailable.markSent();
+                } catch (Exception ex) {
+                    log.warn("Failed to deliver suspension notice for tenant={}: {}", tenantId, ex.getMessage());
+                    unavailable.markFailed();
+                }
+                messageRepository.save(unavailable);
+                return;
+            }
+
+            String messageText = event.getMessageText();
 
             if (messageText == null || messageText.isBlank()) {
                 log.debug("Skipping AI pipeline for blank/non-text message, tenant={}", tenantId);

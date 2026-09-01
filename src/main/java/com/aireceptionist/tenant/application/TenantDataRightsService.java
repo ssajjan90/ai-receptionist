@@ -1,6 +1,6 @@
 package com.aireceptionist.tenant.application;
 
-import com.aireceptionist.tenant.domain.TenantDataExport;
+import com.aireceptionist.tenant.port.in.TenantDataExport;
 import com.aireceptionist.tenant.port.in.TenantDataRightsUseCase;
 import com.aireceptionist.tenant.port.out.TenantAuditPort;
 import com.aireceptionist.tenant.port.out.TenantDataStorePort;

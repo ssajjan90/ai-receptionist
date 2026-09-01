@@ -1,7 +1,7 @@
 package com.aireceptionist.tenant;
 
 import com.aireceptionist.AbstractIntegrationTest;
-import com.aireceptionist.tenant.domain.TenantDataExport;
+import com.aireceptionist.tenant.port.in.TenantDataExport;
 import com.aireceptionist.tenant.port.in.TenantDataRightsUseCase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,9 +63,12 @@ class TenantServiceEraseTest extends AbstractIntegrationTest {
                     INSERT INTO knowledge_entries(id, tenant_id, question, answer)
                     VALUES (?, ?, ?, ?)
                     """), List.of(UUID.randomUUID(), tenantId, "Hours?", "9am to 9pm"));
+            // Story 5.5: fixed lowercase 'whatsapp' -> 'WHATSAPP' — chk_leads_channel has required
+            // uppercase since story 3-5's V15 migration; this test never actually ran against a
+            // DB with that constraint applied until now (see Debug Log).
             insert(connection.prepareStatement("""
                     INSERT INTO leads(id, tenant_id, name, phone, intent, channel, consent_timestamp, consent_channel)
-                    VALUES (?, ?, ?, ?, ?, 'whatsapp', NOW(), 'whatsapp')
+                    VALUES (?, ?, ?, ?, ?, 'WHATSAPP', NOW(), 'WHATSAPP')
                     """), List.of(UUID.randomUUID(), tenantId, "Priya", "+919000000001", "pricing"));
             insert(connection.prepareStatement("""
                     INSERT INTO whatsapp_messages(id, tenant_id, message_id, sender_type, sender_phone, content)

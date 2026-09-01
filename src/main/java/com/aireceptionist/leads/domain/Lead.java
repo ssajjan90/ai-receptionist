@@ -1,5 +1,6 @@
 package com.aireceptionist.leads.domain;
 
+import com.aireceptionist.common.util.Sha256;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -50,6 +51,10 @@ public class Lead {
     @Column(name = "erased", nullable = false)
     private Boolean erased;
 
+    // Story 5.3: SHA-256 of `phone`, deliberately NOT nulled by erase() — see its javadoc.
+    @Column(name = "phone_hash")
+    private String phoneHash;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -76,6 +81,7 @@ public class Lead {
         lead.consentTimestamp = consentedAt != null ? consentedAt : Instant.now();
         lead.consentChannel = consentChannel;
         lead.erased = false;
+        lead.phoneHash = phone == null ? null : Sha256.hex(phone);
         return lead;
     }
 
@@ -95,6 +101,13 @@ public class Lead {
         this.status = Objects.requireNonNull(newStatus, "newStatus must not be null");
     }
 
+    /**
+     * {@code phoneHash} is deliberately NOT nulled here. It's a one-way SHA-256 hash — not PII,
+     * not reversible to the original phone — kept so the admin conversation viewer (story 5.3)
+     * can still detect "this WhatsApp message's sender was an erased lead" and redact content,
+     * without either retaining the raw phone or being unable to identify erased conversations at
+     * all.
+     */
     public void erase() {
         this.customerName = null;
         this.phone = null;
@@ -111,6 +124,7 @@ public class Lead {
     public Instant getConsentTimestamp() { return consentTimestamp; }
     public String getConsentChannel() { return consentChannel; }
     public Boolean getErased() { return erased; }
+    public String getPhoneHash() { return phoneHash; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

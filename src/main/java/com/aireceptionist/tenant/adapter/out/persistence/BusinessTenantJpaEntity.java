@@ -76,6 +76,9 @@ public class BusinessTenantJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "termination_scheduled_at")
+    private Instant terminationScheduledAt;
+
     protected BusinessTenantJpaEntity() {
     }
 
@@ -100,6 +103,7 @@ public class BusinessTenantJpaEntity {
         entity.whatsappConnectedAt = tenant.getWhatsappConnectedAt();
         entity.createdAt = tenant.getCreatedAt();
         entity.updatedAt = tenant.getUpdatedAt();
+        entity.terminationScheduledAt = tenant.getTerminationScheduledAt();
         return entity;
     }
 
@@ -123,7 +127,8 @@ public class BusinessTenantJpaEntity {
                 onboardedAt,
                 whatsappConnectedAt,
                 createdAt,
-                updatedAt
+                updatedAt,
+                terminationScheduledAt
         );
     }
 

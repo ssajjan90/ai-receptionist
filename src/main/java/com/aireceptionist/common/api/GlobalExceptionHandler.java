@@ -4,6 +4,7 @@ import com.aireceptionist.common.exception.AuthorizationException;
 import com.aireceptionist.common.exception.BusinessRuleException;
 import com.aireceptionist.common.exception.ExternalServiceException;
 import com.aireceptionist.common.exception.NotFoundException;
+import com.aireceptionist.common.exception.RateLimitExceededException;
 import com.aireceptionist.common.exception.ValidationException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.validation.ConstraintViolationException;
@@ -40,6 +41,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleValidation(ValidationException ex) {
+        return ApiResponse.error(ex.getErrorCode(), ex.getMessage(), null);
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public ApiResponse<Void> handleRateLimitExceeded(RateLimitExceededException ex) {
         return ApiResponse.error(ex.getErrorCode(), ex.getMessage(), null);
     }
 

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.UUID;
 
 @Service
 public class TenantRateLimitService {
@@ -34,6 +35,22 @@ public class TenantRateLimitService {
                 .addLimit(Bandwidth.builder()
                         .capacity(capacity)
                         .refillGreedy(refillTokens, Duration.ofMinutes(refillPeriodMinutes))
+                        .build())
+                .build());
+        return bucket.tryConsume(1);
+    }
+
+    /**
+     * Story 5.4 (AC3): admin-notification throttling — a fixed 10-per-minute limit per admin,
+     * deliberately not tied to the {@code app.rate-limit.*} properties above (those govern
+     * per-tenant API throttling, an unrelated concern).
+     */
+    public boolean tryConsumeAdminNotification(UUID adminId) {
+        byte[] key = ("ratelimit:admin:" + adminId + ":notify").getBytes(StandardCharsets.UTF_8);
+        Bucket bucket = proxyManager.builder().build(key, () -> BucketConfiguration.builder()
+                .addLimit(Bandwidth.builder()
+                        .capacity(10)
+                        .refillGreedy(10, Duration.ofMinutes(1))
                         .build())
                 .build());
         return bucket.tryConsume(1);

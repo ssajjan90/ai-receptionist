@@ -1,7 +1,7 @@
 package com.aireceptionist.tenant.adapter.out.data;
 
 import com.aireceptionist.common.multitenancy.TenantContext;
-import com.aireceptionist.tenant.domain.TenantDataExport;
+import com.aireceptionist.tenant.port.in.TenantDataExport;
 import com.aireceptionist.tenant.port.out.TenantDataStorePort;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;

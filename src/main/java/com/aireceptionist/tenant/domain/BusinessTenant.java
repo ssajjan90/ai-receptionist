@@ -24,12 +24,14 @@ public class BusinessTenant {
     private Instant whatsappConnectedAt;
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant terminationScheduledAt;
 
     private BusinessTenant(UUID id, String businessName, String ownerName, String ownerPhone, String businessPhone,
                            String email, String passwordHash, TenantStatus status, String tier,
                            String preferredLanguage, String wabaId, String phoneNumberId,
                            String googleReviewUrl, String location, String businessHours, Instant onboardedAt,
-                           Instant whatsappConnectedAt, Instant createdAt, Instant updatedAt) {
+                           Instant whatsappConnectedAt, Instant createdAt, Instant updatedAt,
+                           Instant terminationScheduledAt) {
         this.id = id;
         this.businessName = businessName;
         this.ownerName = ownerName;
@@ -49,6 +51,7 @@ public class BusinessTenant {
         this.whatsappConnectedAt = whatsappConnectedAt;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.terminationScheduledAt = terminationScheduledAt;
     }
 
     public static BusinessTenant register(String businessName, String ownerName, String ownerPhone,
@@ -73,7 +76,8 @@ public class BusinessTenant {
                 null,
                 null,
                 now,
-                now
+                now,
+                null
         );
     }
 
@@ -82,7 +86,8 @@ public class BusinessTenant {
                                          TenantStatus status, String tier, String preferredLanguage,
                                          String wabaId, String phoneNumberId, String googleReviewUrl,
                                          String location, String businessHours, Instant onboardedAt,
-                                         Instant whatsappConnectedAt, Instant createdAt, Instant updatedAt) {
+                                         Instant whatsappConnectedAt, Instant createdAt, Instant updatedAt,
+                                         Instant terminationScheduledAt) {
         return new BusinessTenant(
                 id,
                 businessName,
@@ -102,7 +107,8 @@ public class BusinessTenant {
                 onboardedAt,
                 whatsappConnectedAt,
                 createdAt,
-                updatedAt
+                updatedAt,
+                terminationScheduledAt
         );
     }
 
@@ -129,6 +135,61 @@ public class BusinessTenant {
         this.whatsappConnectedAt = now;
         this.status = TenantStatus.LIVE;
         this.updatedAt = now;
+    }
+
+    /**
+     * Story 5.2 (AC1): admin action — inbound WhatsApp traffic is rejected while SUSPENDED (see
+     * {@code WhatsAppMessageService.onInboundMessage}). AC1 also names voice traffic, but the
+     * {@code voice} module is still an empty placeholder (code review, 2026-09-01) — no voice
+     * inbound path exists yet to guard, so that half of AC1 is not implementable in this story.
+     * See deferred W97: apply the same guard once voice inbound handling is built.
+     */
+    public void suspend() {
+        this.status = TenantStatus.SUSPENDED;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Story 5.2 (AC2): admin action — restores normal processing. Also clears any pending
+     * termination schedule, since resuming service should cancel a scheduled erasure.
+     */
+    public void reactivate() {
+        this.status = TenantStatus.LIVE;
+        this.terminationScheduledAt = null;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Story 5.2 (AC3, NFR28): admin action — schedules data erasure after a 30-day retention window. */
+    public void terminate() {
+        Instant now = Instant.now();
+        this.status = TenantStatus.TERMINATED;
+        this.terminationScheduledAt = now.plus(30, java.time.temporal.ChronoUnit.DAYS);
+        this.updatedAt = now;
+    }
+
+    /**
+     * Story 5.2 (Task 4): set once ScheduledDataRetentionJob has erased this tenant's data.
+     * Story 5.5 code review (decision: scrub now): child-table erasure alone (knowledge entries,
+     * leads, messages — {@code TenantDataRightsUseCase.eraseTenantData}) leaves this row's own PII
+     * untouched, which is not real DPDP erasure. Scrubbed fields get a unique-but-non-identifying
+     * placeholder rather than {@code null}: the JPA entity maps owner_name/owner_phone/email/
+     * password_hash as {@code nullable = false} (even though the DB migration itself allows null),
+     * and phone_number/owner_phone/email are DB-unique — a shared literal like "" or "ERASED" would
+     * collide across more than one erased tenant. Deriving the placeholder from this tenant's own
+     * id keeps every erased row's placeholder unique while freeing the real phone/email for a
+     * future, unrelated registration (uq_tenants_owner_phone / uq_tenants_email are partial indexes
+     * that stop applying once the real value is gone).
+     */
+    public void markErased() {
+        this.status = TenantStatus.ERASED;
+        String tag = id.toString().replace("-", "");
+        this.businessName = "Erased Business";
+        this.ownerName = "Erased Owner";
+        this.ownerPhone = ("EROWN-" + tag).substring(0, 20);
+        this.businessPhone = ("ERBIZ-" + tag).substring(0, 20);
+        this.email = "erased-" + id + "@erased.invalid";
+        this.passwordHash = "erased-no-login-possible";
+        this.updatedAt = Instant.now();
     }
 
     public UUID getId() {
@@ -205,5 +266,9 @@ public class BusinessTenant {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Instant getTerminationScheduledAt() {
+        return terminationScheduledAt;
     }
 }

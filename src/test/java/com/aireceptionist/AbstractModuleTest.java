@@ -3,17 +3,17 @@ package com.aireceptionist;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.core.Violations;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.lifecycle.Startables;
 
-@Testcontainers(disabledWithoutDocker = true)
-@ActiveProfiles("test")
+/**
+ * Shared base for every {@code *ModuleTest} class. Deliberately has no {@code @SpringBootTest}/
+ * {@code @ApplicationModuleTest}/Testcontainers dependency: {@link ApplicationModules#of} performs
+ * pure static bytecode analysis, no live bean graph needed. Using {@code @ApplicationModuleTest}
+ * here used to force a real module-scoped Spring context to bootstrap for every subclass, which
+ * broke as soon as any module's beans reached a cross-module dependency chain the restricted
+ * bootstrap mode couldn't satisfy (root-level {@code config} package beans in particular) — see
+ * story 5.2's fix for {@code AdminModuleTest} and deferred W83 for {@code WhatsAppModuleTest}.
+ * None of these classes ever added a real module-scoped test needing that context anyway.
+ */
 public abstract class AbstractModuleTest {
 
     /**
@@ -22,9 +22,7 @@ public abstract class AbstractModuleTest {
      * bidirectional saga (WhatsApp captures a lead -> leads reacts; leads captures a lead ->
      * whatsapp notifies the owner) — Modulith flags any such pair as a cycle regardless of
      * whether the coupling is loose (event-driven) or tight, so this is a documented, accepted
-     * exception rather than a defect. Every {@code *ModuleTest} subclass sets
-     * {@code @ApplicationModuleTest(verifyAutomatically = false)} and inherits this test so a
-     * genuinely new violation anywhere in the app still fails the build.
+     * exception rather than a defect. A genuinely new violation anywhere in the app still fails.
      * See deferred W82 (2026-09-01 Spring Modulith cycle fix, code review of story 5-1).
      */
     @Test
@@ -38,37 +36,5 @@ public abstract class AbstractModuleTest {
         return message.contains("Cycle detected")
                 && message.contains("Slice leads")
                 && message.contains("Slice whatsapp");
-    }
-
-    @Container
-    @SuppressWarnings("resource")
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("aireceptionist_test")
-            .withUsername("test")
-            .withPassword("test");
-
-    @Container
-    @SuppressWarnings("resource")
-    static final GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine")
-            .withExposedPorts(6379);
-
-    static {
-        // Explicit eager start: @DynamicPropertySource below reads postgres.getJdbcUrl()/
-        // redis.getMappedPort() during context bootstrap, which requires the containers already
-        // running. @Testcontainers normally guarantees start-before-bootstrap ordering, but that
-        // ordering has proven unreliable for this class specifically (empty @ApplicationModuleTest
-        // subclasses with everything inherited from here) — start explicitly as a defensive fix.
-        Startables.deepStart(postgres, redis).join();
-    }
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.data.redis.host", redis::getHost);
-        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379));
-        registry.add("app.jwt.private-key", TestJwtKeys::privateKeyPem);
-        registry.add("app.jwt.public-key", TestJwtKeys::publicKeyPem);
     }
 }
