@@ -21,8 +21,19 @@ jobs:
       fail-fast: false
       matrix:
         group:
-          - name: admin
-            pattern: "com.aireceptionist.admin.**,com.aireceptionist.api.**,com.aireceptionist.audit.**,com.aireceptionist.billing.**"
+          # 2026-09-03: the original single "admin" group (8 admin classes + api/audit/billing)
+          # still reproduced the full Connection-refused/kbUpdateListenerContainer cascade even
+          # after this split (20/50 tests). AuditLogApiTest (12 tests) and AdminConversationViewTest
+          # (6 tests) + AdminDashboardTest were the ones actually failing; AdminControllerTest,
+          # AdminBroadcastTest, AdminModuleTest, ScheduledRetentionJobTest, AdminTenantActionsTest
+          # passed within the same run. Isolating the two heaviest, most context-distinct classes
+          # into their own jobs to shrink each job's Spring-context footprint further.
+          - name: admin-core
+            pattern: "com.aireceptionist.admin.AdminControllerTest,com.aireceptionist.admin.AdminBroadcastTest,com.aireceptionist.admin.AdminModuleTest,com.aireceptionist.admin.ScheduledRetentionJobTest,com.aireceptionist.admin.AdminTenantActionsTest,com.aireceptionist.api.**,com.aireceptionist.billing.**"
+          - name: admin-audit
+            pattern: "com.aireceptionist.admin.AuditLogApiTest,com.aireceptionist.audit.**"
+          - name: admin-conversation
+            pattern: "com.aireceptionist.admin.AdminConversationViewTest,com.aireceptionist.admin.AdminDashboardTest"
           - name: ai
             pattern: "com.aireceptionist.ai.**,com.aireceptionist.resilience.**,com.aireceptionist.ratelimit.**"
           - name: knowledgebase
