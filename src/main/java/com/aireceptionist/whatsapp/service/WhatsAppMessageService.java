@@ -128,6 +128,16 @@ public class WhatsAppMessageService {
             // lookup.
             String status = getTenantStatusUseCase.getStatus(event.getTenantIdValue()).orElse(null);
             if (status != null && NON_LIVE_BLOCKED_STATUSES.contains(status)) {
+                // Story 5.5 code review (follow-up, 2026-09-01): ERASED is terminal and DPDP-erasure
+                // driven — unlike SUSPENDED/PAYMENT_SUSPENDED/TERMINATED (all recoverable or pending),
+                // sending and persisting a reply here would write a brand-new whatsapp_messages row
+                // (tenant_id + the real sender's phone number) for a tenant whose data was just hard-
+                // deleted, silently re-accumulating PII after erasure every time someone messages the
+                // old number. Drop it silently instead — no persistence, no outbound message.
+                if (status.equals("ERASED")) {
+                    log.info("Dropping inbound message for ERASED tenant={} — no reply, no persistence", tenantId);
+                    return;
+                }
                 log.info("Rejecting inbound message for {} tenant={}", status, tenantId);
                 WhatsAppMessage unavailable = WhatsAppMessage.outboundAi(
                         event.getTenantIdValue(), senderPhone, SERVICE_UNAVAILABLE_MESSAGE, 1.0, "en");

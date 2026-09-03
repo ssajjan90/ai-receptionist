@@ -106,6 +106,39 @@ class WhatsAppMessageServiceTest {
         verify(messageRepository, org.mockito.Mockito.times(2)).save(any(WhatsAppMessage.class));
     }
 
+    @Test
+    void terminatedTenantStillGetsFixedReplyWithoutAiProcessing() {
+        // TERMINATED is recoverable-adjacent (30-day grace period before erasure) — unlike ERASED,
+        // it keeps the existing notify-and-persist behavior.
+        UUID tenantId = UUID.randomUUID();
+        when(getTenantStatusUseCase.getStatus(tenantId)).thenReturn(Optional.of("TERMINATED"));
+
+        newService().onInboundMessage(new InboundWhatsAppMessageEvent(
+                tenantId, UUID.randomUUID().toString(), "+919876500004", "Hi", "PHONE_1", Instant.now()));
+
+        verify(notificationService).sendMessage(tenantId.toString(), "+919876500004", UNAVAILABLE_MESSAGE);
+        verify(messageRepository, org.mockito.Mockito.times(2)).save(any(WhatsAppMessage.class));
+    }
+
+    /**
+     * Story 5.5 code review follow-up (2026-09-01): unlike SUSPENDED/PAYMENT_SUSPENDED/TERMINATED,
+     * ERASED must not send or persist anything — doing so would write a brand-new whatsapp_messages
+     * row (tenant_id + the real sender's phone number) for a tenant whose data was just hard-deleted
+     * by DPDP erasure, silently re-accumulating PII every time someone messages the old number.
+     */
+    @Test
+    void erasedTenantGetsNoReplyAndNothingIsPersisted() {
+        UUID tenantId = UUID.randomUUID();
+        when(getTenantStatusUseCase.getStatus(tenantId)).thenReturn(Optional.of("ERASED"));
+
+        newService().onInboundMessage(new InboundWhatsAppMessageEvent(
+                tenantId, UUID.randomUUID().toString(), "+919876500005", "Hi", "PHONE_1", Instant.now()));
+
+        verify(notificationService, never()).sendMessage(anyString(), anyString(), anyString());
+        verify(messageRepository, never()).save(any(WhatsAppMessage.class));
+        verify(llmService, never()).generateResponse(any(), any(), any(), any(), any());
+    }
+
     /**
      * Regression (code review, 2026-09-01): {@code getStatus} returning empty (no matching tenant
      * row — a real, reachable case, not hypothetical: many pre-existing tests, e.g.

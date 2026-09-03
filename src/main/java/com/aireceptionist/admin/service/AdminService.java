@@ -2,6 +2,8 @@ package com.aireceptionist.admin.service;
 
 import com.aireceptionist.admin.dto.AdminDashboardResponse;
 import com.aireceptionist.admin.dto.AuditEventSummary;
+import com.aireceptionist.admin.dto.AuditLogEntryResponse;
+import com.aireceptionist.admin.dto.AuditLogPageResponse;
 import com.aireceptionist.admin.dto.BroadcastResult;
 import com.aireceptionist.admin.dto.ConversationLogResponse;
 import com.aireceptionist.admin.dto.TenantDetailResponse;
@@ -226,6 +228,38 @@ public class AdminService {
         return page;
     }
 
+    /**
+     * Story 5.6 (AC1-AC4). {@code tenantId} is required (unlike {@code from}/{@code to}/
+     * {@code eventType}, all optional) since this reuses the same per-tenant {@code
+     * app.current_tenant} pattern as {@link #findConversations} rather than a privileged
+     * BYPASSRLS database role (see class javadoc) — the story's Dev Notes floated BYPASSRLS, but
+     * that would contradict this class's already-established, already-reviewed approach for
+     * every other cross-tenant admin read.
+     *
+     * <p>Code review, 2026-09-03: originally used {@code Page}/{@code OFFSET}, matching
+     * {@link #findConversations}'s shape — but unlike that method, this endpoint's own
+     * {@code recordAdminAction} write lands in the exact table it just queried, so every fetch
+     * shifts a subsequent {@code OFFSET} page by one row. Switched to keyset/seek pagination on
+     * {@code (occurred_at, id)}, which is immune to that drift since it never reuses a numeric
+     * offset. This also drops the separate {@code COUNT(*)} query (no more total-vs-content
+     * mismatch under concurrent writes — see the now-resolved count/select race note).
+     */
+    public AuditLogPageResponse queryAuditLog(UUID adminId, UUID tenantId, Instant from, Instant to, String eventType,
+                                               Instant cursorOccurredAt, UUID cursorId, int pageSize) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new ValidationException("INVALID_DATE_RANGE", "'from' must not be after 'to'.");
+        }
+        if ((cursorOccurredAt == null) != (cursorId == null)) {
+            throw new ValidationException("INVALID_CURSOR", "'cursorOccurredAt' and 'cursorId' must be supplied together.");
+        }
+        requireTenantExists(tenantId);
+
+        AuditLogPageResponse page = withTenantContext(tenantId,
+                connection -> selectAuditLogPage(connection, tenantId, from, to, eventType, cursorOccurredAt, cursorId, pageSize));
+        recordAdminAction(adminId, tenantId, "ADMIN_AUDIT_VIEW");
+        return page;
+    }
+
     /** {@code tenants} carries no RLS policy (V1, see class javadoc) — no tenant context needed here. */
     private void requireTenantExists(UUID tenantId) {
         Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tenants WHERE id = ?", Long.class, tenantId);
@@ -320,6 +354,73 @@ public class AdminService {
     private void bindParams(PreparedStatement statement, List<Object> params) throws SQLException {
         for (int i = 0; i < params.size(); i++) {
             statement.setObject(i + 1, params.get(i));
+        }
+    }
+
+    /**
+     * Story 5.6 (AC1-AC3), keyset-paginated (code review, 2026-09-03 — see {@link #queryAuditLog}).
+     * Differs from {@link #appendDateRangeFilter} in two ways: the column is {@code occurred_at}
+     * (not {@code received_at}), and AC3's 90-day retention window is enforced unconditionally
+     * here — not an optional filter, so it's baked into the base {@code WHERE} clause rather than
+     * appended alongside {@code from}/{@code to}. Fetches one extra row beyond {@code pageSize} to
+     * determine {@code hasMore} without a separate {@code COUNT(*)} query.
+     */
+    private AuditLogPageResponse selectAuditLogPage(Connection connection, UUID tenantId, Instant from, Instant to,
+                                                      String eventType, Instant cursorOccurredAt, UUID cursorId,
+                                                      int pageSize) throws SQLException {
+        StringBuilder sql = new StringBuilder("""
+                SELECT id, tenant_id, event_type, confidence, message_hash, occurred_at
+                FROM audit_log WHERE tenant_id = ? AND occurred_at > NOW() - INTERVAL '90 days'
+                """);
+        List<Object> params = new ArrayList<>();
+        params.add(tenantId);
+        appendAuditLogFilters(sql, params, from, to, eventType);
+        if (cursorOccurredAt != null) {
+            sql.append(" AND (occurred_at, id) < (?, ?)");
+            params.add(Timestamp.from(cursorOccurredAt));
+            params.add(cursorId);
+        }
+        sql.append(" ORDER BY occurred_at DESC, id DESC LIMIT ?");
+        params.add(pageSize + 1);
+
+        List<AuditLogEntryResponse> rows = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+            bindParams(statement, params);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    rows.add(new AuditLogEntryResponse(
+                            (UUID) resultSet.getObject("id"),
+                            (UUID) resultSet.getObject("tenant_id"),
+                            resultSet.getString("event_type"),
+                            resultSet.getBigDecimal("confidence"),
+                            resultSet.getString("message_hash"),
+                            resultSet.getTimestamp("occurred_at").toInstant()));
+                }
+            }
+        }
+
+        boolean hasMore = rows.size() > pageSize;
+        List<AuditLogEntryResponse> content = hasMore ? rows.subList(0, pageSize) : rows;
+        AuditLogEntryResponse last = content.isEmpty() ? null : content.get(content.size() - 1);
+        return new AuditLogPageResponse(
+                content,
+                hasMore,
+                hasMore ? last.occurredAt() : null,
+                hasMore ? last.id() : null);
+    }
+
+    private void appendAuditLogFilters(StringBuilder sql, List<Object> params, Instant from, Instant to, String eventType) {
+        if (from != null) {
+            sql.append(" AND occurred_at >= ?");
+            params.add(Timestamp.from(from));
+        }
+        if (to != null) {
+            sql.append(" AND occurred_at <= ?");
+            params.add(Timestamp.from(to));
+        }
+        if (eventType != null && !eventType.isBlank()) {
+            sql.append(" AND event_type = ?");
+            params.add(eventType);
         }
     }
 

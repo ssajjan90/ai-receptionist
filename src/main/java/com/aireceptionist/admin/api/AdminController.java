@@ -1,6 +1,8 @@
 package com.aireceptionist.admin.api;
 
 import com.aireceptionist.admin.dto.AdminDashboardResponse;
+import com.aireceptionist.admin.dto.AuditLogEntryResponse;
+import com.aireceptionist.admin.dto.AuditLogPageResponse;
 import com.aireceptionist.admin.dto.BroadcastRequest;
 import com.aireceptionist.admin.dto.BroadcastResult;
 import com.aireceptionist.admin.dto.ConversationLogResponse;
@@ -95,6 +97,32 @@ public class AdminController extends VersionedRestController {
                 : pageable;
         return ApiResponse.ok(adminService.findConversations(
                 currentAdminId(authentication), tenantId, from, to, boundedPageable));
+    }
+
+    /**
+     * Story 5.6 (AC1-AC4). {@code tenantId} is a required query param (not a path variable, unlike
+     * {@link #getConversations}) — matches the story's literal URL shape. Not {@code
+     * @Transactional(readOnly = true)} — same reason as {@link #getConversations}: this writes an
+     * {@code ADMIN_AUDIT_VIEW} audit entry as a side effect.
+     *
+     * <p>Code review, 2026-09-03: uses keyset/seek pagination ({@code cursorOccurredAt}/
+     * {@code cursorId}, from the previous response's {@code nextCursorOccurredAt}/
+     * {@code nextCursorId}) instead of a page number — see {@link AdminService#queryAuditLog}'s
+     * javadoc for why {@code OFFSET} paging is unsafe for this specific endpoint.
+     */
+    @GetMapping("/audit-log")
+    public ApiResponse<AuditLogPageResponse> queryAuditLog(
+            @RequestParam UUID tenantId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant cursorOccurredAt,
+            @RequestParam(required = false) UUID cursorId,
+            @RequestParam(required = false, defaultValue = "50") int size,
+            Authentication authentication) {
+        int boundedSize = Math.min(size, MAX_PAGE_SIZE);
+        return ApiResponse.ok(adminService.queryAuditLog(
+                currentAdminId(authentication), tenantId, from, to, eventType, cursorOccurredAt, cursorId, boundedSize));
     }
 
     @PostMapping("/tenants/{tenantId}/suspend")
