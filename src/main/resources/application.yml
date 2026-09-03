@@ -46,6 +46,11 @@ app:
     app-secret: ${WHATSAPP_APP_SECRET:test-app-secret}
     api-url: ${WHATSAPP_API_URL:https://graph.facebook.com/v19.0}
     access-token: ${WHATSAPP_ACCESS_TOKEN:test-access-token}
+  exotel:
+    api-key: ${EXOTEL_API_KEY:test-exotel-api-key}
+    api-token: ${EXOTEL_API_TOKEN:test-exotel-api-token}
+    shared-secret: ${EXOTEL_SHARED_SECRET:test-exotel-shared-secret}
+    sid: ${EXOTEL_SID:test-exotel-sid}
   ocr:
     provider: ${OCR_PROVIDER:google}
   cache:

@@ -19,6 +19,8 @@ public interface TenantRegistrationRepository {
 
     Optional<BusinessTenant> findByPhoneNumberId(String phoneNumberId);
 
+    Optional<BusinessTenant> findByBusinessPhone(String businessPhone);
+
     BusinessTenant save(BusinessTenant tenant);
 
     Optional<BusinessTenant> findById(UUID tenantId);

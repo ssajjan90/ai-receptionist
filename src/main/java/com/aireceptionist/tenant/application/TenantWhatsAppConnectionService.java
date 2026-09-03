@@ -12,7 +12,9 @@ import com.aireceptionist.tenant.port.in.ConnectedTenantWhatsApp;
 import com.aireceptionist.tenant.port.in.GetLiveTenantsUseCase;
 import com.aireceptionist.tenant.port.in.GetTenantPhoneNumberIdUseCase;
 import com.aireceptionist.tenant.port.in.GetTenantStatusUseCase;
+import com.aireceptionist.tenant.port.in.ResolveTenantByBusinessPhoneUseCase;
 import com.aireceptionist.tenant.port.in.ResolveTenantByWhatsAppPhoneUseCase;
+import com.aireceptionist.tenant.port.in.ResolvedTenantVoiceRoute;
 import com.aireceptionist.tenant.port.in.ResolvedTenantWhatsAppRoute;
 import com.aireceptionist.tenant.port.in.TenantDataRightsUseCase;
 import com.aireceptionist.tenant.port.in.TenantLifecycleUseCase;
@@ -26,8 +28,8 @@ import java.util.UUID;
 
 @Service
 public class TenantWhatsAppConnectionService implements ConnectTenantWhatsAppUseCase,
-        ResolveTenantByWhatsAppPhoneUseCase, GetLiveTenantsUseCase, GetTenantPhoneNumberIdUseCase,
-        GetTenantStatusUseCase, TenantLifecycleUseCase {
+        ResolveTenantByWhatsAppPhoneUseCase, ResolveTenantByBusinessPhoneUseCase, GetLiveTenantsUseCase,
+        GetTenantPhoneNumberIdUseCase, GetTenantStatusUseCase, TenantLifecycleUseCase {
 
     private final TenantRegistrationRepository tenantRepository;
     private final TenantDataRightsUseCase tenantDataRightsUseCase;
@@ -83,6 +85,14 @@ public class TenantWhatsAppConnectionService implements ConnectTenantWhatsAppUse
         return tenantRepository.findByPhoneNumberId(phoneNumberId)
                 .map(tenant -> new ResolvedTenantWhatsAppRoute(
                         tenant.getId(), tenant.getPhoneNumberId(), tenant.getOwnerPhone()));
+    }
+
+    /** Story 6.1 (AC2). */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ResolvedTenantVoiceRoute> resolveByBusinessPhone(String businessPhone) {
+        return tenantRepository.findByBusinessPhone(businessPhone)
+                .map(tenant -> new ResolvedTenantVoiceRoute(tenant.getId(), tenant.getTier()));
     }
 
     @Override

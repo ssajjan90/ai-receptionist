@@ -46,6 +46,11 @@ public class TenantPersistenceAdapter implements TenantRegistrationRepository, T
     }
 
     @Override
+    public Optional<BusinessTenant> findByBusinessPhone(String businessPhone) {
+        return repository.findByBusinessPhone(businessPhone).map(BusinessTenantJpaEntity::toDomain);
+    }
+
+    @Override
     public BusinessTenant save(BusinessTenant tenant) {
         return repository.save(BusinessTenantJpaEntity.fromDomain(tenant)).toDomain();
     }

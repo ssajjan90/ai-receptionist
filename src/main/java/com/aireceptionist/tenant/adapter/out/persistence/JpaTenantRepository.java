@@ -19,5 +19,7 @@ public interface JpaTenantRepository extends JpaRepository<BusinessTenantJpaEnti
 
     Optional<BusinessTenantJpaEntity> findByPhoneNumberId(String phoneNumberId);
 
+    Optional<BusinessTenantJpaEntity> findByBusinessPhone(String businessPhone);
+
     List<BusinessTenantJpaEntity> findAllByStatus(TenantStatus status);
 }
