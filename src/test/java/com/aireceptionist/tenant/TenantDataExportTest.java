@@ -5,16 +5,20 @@ import com.aireceptionist.common.audit.AuditLogRepository;
 import com.aireceptionist.common.security.JwtTokenProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.security.MessageDigest;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HexFormat;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +39,7 @@ class TenantDataExportTest extends AbstractIntegrationTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired JwtTokenProvider tokenProvider;
     @Autowired AuditLogRepository auditLogRepository;
+    @Value("${app.export.message-hash-secret}") String messageHashSecret;
 
     private UUID seedTenantWithData() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -87,12 +92,10 @@ class TenantDataExportTest extends AbstractIntegrationTest {
         }
     }
 
-    private String sha256Hex(String value) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        StringBuilder hex = new StringBuilder(hash.length * 2);
-        for (byte b : hash) hex.append(String.format("%02x", b));
-        return hex.toString();
+    private String hmacSha256Hex(String value) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(messageHashSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return HexFormat.of().formatHex(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
     }
 
     private String ownerToken(UUID tenantId) throws Exception {
@@ -114,7 +117,7 @@ class TenantDataExportTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.leads.length()").value(1))
                 .andExpect(jsonPath("$.data.leads[0].name").value("Active Lead"))
                 .andExpect(jsonPath("$.data.messageHashes.length()").value(1))
-                .andExpect(jsonPath("$.data.messageHashes[0]").value(sha256Hex("Secret raw content")))
+                .andExpect(jsonPath("$.data.messageHashes[0]").value(hmacSha256Hex("Secret raw content")))
                 .andExpect(jsonPath("$.data.messageHashes[0]").value(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("Secret raw content"))));
     }

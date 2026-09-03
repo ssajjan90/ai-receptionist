@@ -133,7 +133,13 @@ public class LeadService {
         }
 
         lead.erase();
-        leadRepository.save(lead);
+        // saveAndFlush, not save: this method's @Transactional connection is shared with
+        // auditLogRepository.save() below, which does its own SET app.current_tenant / INSERT /
+        // RESET on that same connection. Without an explicit flush here, Hibernate defers this
+        // UPDATE to commit time — by then app.current_tenant has already been RESET, and leads'
+        // RLS policy (V8/W99) silently matches zero rows, failing the optimistic-lock check.
+        // Flushing now runs the UPDATE while app.current_tenant is still set from findById above.
+        leadRepository.saveAndFlush(lead);
 
         auditLogRepository.save(new AuditLogEntry(UUID.randomUUID(), tenantId,
                 AuditEventType.DATA_ERASED, null, leadId.toString(), Instant.now()));

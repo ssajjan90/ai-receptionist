@@ -65,7 +65,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ExternalServiceException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     public ApiResponse<Void> handleExternalService(ExternalServiceException ex) {
-        return ApiResponse.error("EXTERNAL_SERVICE_ERROR", ex.getMessage(), null);
+        // ex.getMessage() often embeds the raw third-party API error body (Google Vision,
+        // WhatsApp, etc.) — log it for diagnosis but never return it to the API consumer.
+        log.warn("External service call failed", ex);
+        return ApiResponse.error("EXTERNAL_SERVICE_ERROR", "A dependent service is temporarily unavailable, please retry shortly", null);
     }
 
     @ExceptionHandler(BusinessRuleException.class)

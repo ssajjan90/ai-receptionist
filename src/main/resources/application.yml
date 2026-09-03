@@ -7,6 +7,10 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
   datasource:
+    # Runtime connection the app uses for every request. In an environment that provisions a
+    # separate non-superuser app_runtime role (docker-compose.yml, AbstractIntegrationTest — see
+    # W99 / V8__create_rls_policies.sql), this MUST be that restricted role, not the migration
+    # role below, or row-level security silently provides no protection.
     url: ${DB_URL:jdbc:postgresql://localhost:5432/aireceptionist}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
@@ -22,6 +26,13 @@ spring:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
+    # Migrations need DDL/extension privileges the restricted runtime role above doesn't have, so
+    # Flyway gets its own connection. Defaults fall back to the same role as spring.datasource.*
+    # (today's behavior, unchanged) unless DB_MIGRATION_USERNAME/PASSWORD are set — docker-compose
+    # and the Testcontainers test setup both set them to the privileged table-owning role.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/aireceptionist}
+    user: ${DB_MIGRATION_USERNAME:${DB_USERNAME:postgres}}
+    password: ${DB_MIGRATION_PASSWORD:${DB_PASSWORD:postgres}}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -41,6 +52,8 @@ app:
     public-key: ${JWT_PUBLIC_KEY}
   otp:
     secret: ${OTP_SECRET:change-me-in-production}
+    max-verify-attempts: ${OTP_MAX_VERIFY_ATTEMPTS:5}
+    resend-cooldown-seconds: ${OTP_RESEND_COOLDOWN_SECONDS:60}
   whatsapp:
     verify-token: ${WHATSAPP_VERIFY_TOKEN:test-verify-token}
     app-secret: ${WHATSAPP_APP_SECRET:test-app-secret}
@@ -53,6 +66,12 @@ app:
     sid: ${EXOTEL_SID:test-exotel-sid}
   ocr:
     provider: ${OCR_PROVIDER:google}
+  export:
+    # HMAC key for hashing WhatsApp message content in tenant data exports (see W111): customer
+    # messages are frequently low-entropy ("yes", "ok", a phone number), so a plain unsalted hash
+    # is trivially reversible via a dictionary attack. Keying it makes that infeasible without
+    # this secret. Must differ per environment; never reuse the local default in production.
+    message-hash-secret: ${EXPORT_HASH_SECRET:change-me-in-production}
   cache:
     response-ttl-minutes: 5
   rate-limit:
@@ -77,7 +96,11 @@ management:
         include: health,info,prometheus
   endpoint:
     health:
-      show-details: always
+      # /actuator/health is permitAll (SecurityConfig) for load-balancer health checks, so
+      # anonymous requests carry no authority and always get the bare UP/DOWN status here —
+      # never W6's DB/Redis connection detail leak. An authenticated caller with a granted
+      # authority still sees full component details.
+      show-details: when-authorized
 
 
 resilience4j:

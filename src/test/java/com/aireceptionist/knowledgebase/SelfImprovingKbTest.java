@@ -11,9 +11,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -32,6 +34,25 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
     @BeforeEach
     void clearData() {
         entryRepository.deleteAll();
+    }
+
+    // audit_log carries RLS (V9/W99): an unscoped query sees zero rows regardless of what the app
+    // wrote, so app.current_tenant must be set on this connection first.
+    private Boolean isResolved(UUID tenantId, UUID auditLogId) {
+        return jdbcTemplate.execute((ConnectionCallback<Boolean>) connection -> {
+            try {
+                connection.createStatement().execute("SELECT set_config('app.current_tenant', '" + tenantId + "', false)");
+                try (PreparedStatement statement = connection.prepareStatement("SELECT resolved FROM audit_log WHERE id = ?")) {
+                    statement.setObject(1, auditLogId);
+                    try (var resultSet = statement.executeQuery()) {
+                        resultSet.next();
+                        return resultSet.getBoolean(1);
+                    }
+                }
+            } finally {
+                connection.createStatement().execute("RESET app.current_tenant");
+            }
+        });
     }
 
     @Test
@@ -72,11 +93,8 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
             assertThat(entries.get(0).getAnswer()).isEqualTo(answer);
         });
 
-        await().atMost(5, SECONDS).untilAsserted(() -> {
-            Boolean resolved = jdbcTemplate.queryForObject(
-                    "SELECT resolved FROM audit_log WHERE id = ?", Boolean.class, auditLogId);
-            assertThat(resolved).isTrue();
-        });
+        await().atMost(5, SECONDS).untilAsserted(() ->
+                assertThat(isResolved(tenantId, auditLogId)).isTrue());
 
         String trainKey = "train:" + tenantId + ":" + ownerPhone;
         assertThat(redisTemplate.opsForValue().get(trainKey)).isNull();
@@ -153,10 +171,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
             assertThat(entries).hasSize(1);
         });
 
-        await().atMost(5, SECONDS).untilAsserted(() -> {
-            Boolean resolved = jdbcTemplate.queryForObject(
-                    "SELECT resolved FROM audit_log WHERE id = ?", Boolean.class, auditLogId);
-            assertThat(resolved).isTrue();
-        });
+        await().atMost(5, SECONDS).untilAsserted(() ->
+                assertThat(isResolved(tenantId, auditLogId)).isTrue());
     }
 }

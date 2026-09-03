@@ -1,6 +1,7 @@
 package com.aireceptionist.knowledgebase;
 
 import com.aireceptionist.AbstractIntegrationTest;
+import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.common.security.JwtTokenProvider;
 import com.aireceptionist.knowledgebase.domain.EntryType;
 import com.aireceptionist.knowledgebase.dto.CreateKnowledgeEntryRequest;
@@ -42,6 +43,19 @@ class KnowledgeBaseWebCrudTest extends AbstractIntegrationTest {
         entryRepository.deleteAll();
     }
 
+    // knowledge_entries carries RLS (V8/W99): entryRepository.findById relies on TenantContext
+    // (set for the duration of an HTTP request by the JWT filter, cleared once it returns), so a
+    // verification read from the test thread after mockMvc.perform() returns needs its own scope.
+    private java.util.Optional<com.aireceptionist.knowledgebase.domain.KnowledgeEntry> findEntry(
+            UUID entryId, UUID tenantId) {
+        TenantContext.setCurrentTenant(tenantId.toString());
+        try {
+            return entryRepository.findById(entryId);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
     @Test
     void createEntryPersistsToDbAndCanBeRetrievedAndDeleted() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -67,7 +81,7 @@ class KnowledgeBaseWebCrudTest extends AbstractIntegrationTest {
         String responseBody = createResult.getResponse().getContentAsString();
         String entryId = objectMapper.readTree(responseBody).at("/data/id").asText();
 
-        assertThat(entryRepository.findById(UUID.fromString(entryId))).isPresent();
+        assertThat(findEntry(UUID.fromString(entryId), tenantId)).isPresent();
 
         mockMvc.perform(get(base + "?page=0&size=20")
                         .header("Authorization", "Bearer " + token))
@@ -84,7 +98,7 @@ class KnowledgeBaseWebCrudTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.price").value("30"));
 
-        assertThat(entryRepository.findById(UUID.fromString(entryId)))
+        assertThat(findEntry(UUID.fromString(entryId), tenantId))
                 .isPresent()
                 .hasValueSatisfying(e -> assertThat(e.getPrice()).isEqualTo("30"));
 
@@ -92,7 +106,7 @@ class KnowledgeBaseWebCrudTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isNoContent());
 
-        assertThat(entryRepository.findById(UUID.fromString(entryId))).isEmpty();
+        assertThat(findEntry(UUID.fromString(entryId), tenantId)).isEmpty();
     }
 
     @Test

@@ -182,9 +182,24 @@ class AdminConversationViewTest extends AbstractIntegrationTest {
 
         // AC3 / Task 1's stated rationale for adding adminId: the acting admin must be recorded,
         // not just that *some* admin viewed the conversation (code review, 2026-09-01).
-        String messageHash = jdbcTemplate.queryForObject(
-                "SELECT message_hash FROM audit_log WHERE tenant_id = ? AND event_type = 'ADMIN_CONVERSATION_VIEW' AND occurred_at > ?",
-                String.class, tenantId, Timestamp.from(before));
+        // audit_log carries RLS (V9/W99): an unscoped query sees zero rows regardless of what the
+        // app wrote, so app.current_tenant must be set on this connection first.
+        String messageHash = jdbcTemplate.execute((ConnectionCallback<String>) connection -> {
+            try {
+                setTenant(connection, tenantId);
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT message_hash FROM audit_log WHERE tenant_id = ? AND event_type = 'ADMIN_CONVERSATION_VIEW' AND occurred_at > ?")) {
+                    statement.setObject(1, tenantId);
+                    statement.setTimestamp(2, Timestamp.from(before));
+                    try (var resultSet = statement.executeQuery()) {
+                        resultSet.next();
+                        return resultSet.getString(1);
+                    }
+                }
+            } finally {
+                resetTenant(connection);
+            }
+        });
         assertThat(messageHash).isEqualTo(adminId.toString());
     }
 
@@ -194,15 +209,19 @@ class AdminConversationViewTest extends AbstractIntegrationTest {
         String erasedPhone = "+919876543210";
         String activePhone = "+919876500000";
 
+        // LeadService.eraseLead relies solely on RLS (via TenantContext) to scope its
+        // findById lookup — no explicit tenant_id filter in the query itself — so it must run
+        // with the same tenant context a real authenticated request's JWT filter would set for
+        // the whole request, not just around the seeding insert.
         UUID erasedLeadId;
         TenantContext.setCurrentTenant(tenantId.toString());
         try {
             erasedLeadId = leadRepository.save(Lead.create(tenantId, "Erased Customer", erasedPhone,
                     "Some intent", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now())).getId();
+            leadService.eraseLead(tenantId, erasedLeadId);
         } finally {
             TenantContext.clear();
         }
-        leadService.eraseLead(tenantId, erasedLeadId);
 
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
             setTenant(connection, tenantId);

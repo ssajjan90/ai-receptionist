@@ -9,9 +9,11 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -72,9 +74,24 @@ class AdminBroadcastTest extends AbstractIntegrationTest {
 
         verify(notificationService).sendMessage(eq(tenantId.toString()), eq("+919876500001"), eq(longMessage));
 
-        String messageHash = jdbcTemplate.queryForObject(
-                "SELECT message_hash FROM audit_log WHERE tenant_id = ? AND event_type = 'ADMIN_NOTIFICATION_SENT' AND occurred_at > ?",
-                String.class, tenantId, java.sql.Timestamp.from(before));
+        // audit_log carries RLS (V9/W99): an unscoped query sees zero rows regardless of what
+        // the app wrote, so app.current_tenant must be set on this connection first.
+        String messageHash = jdbcTemplate.execute((ConnectionCallback<String>) connection -> {
+            try {
+                connection.createStatement().execute("SELECT set_config('app.current_tenant', '" + tenantId + "', false)");
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT message_hash FROM audit_log WHERE tenant_id = ? AND event_type = 'ADMIN_NOTIFICATION_SENT' AND occurred_at > ?")) {
+                    statement.setObject(1, tenantId);
+                    statement.setTimestamp(2, java.sql.Timestamp.from(before));
+                    try (var resultSet = statement.executeQuery()) {
+                        resultSet.next();
+                        return resultSet.getString(1);
+                    }
+                }
+            } finally {
+                connection.createStatement().execute("RESET app.current_tenant");
+            }
+        });
         assertThat(messageHash).isEqualTo("A".repeat(50));
     }
 

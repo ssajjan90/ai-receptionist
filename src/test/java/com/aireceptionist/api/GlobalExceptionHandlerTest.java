@@ -1,6 +1,7 @@
 package com.aireceptionist.api;
 
 import com.aireceptionist.common.api.GlobalExceptionHandler;
+import com.aireceptionist.common.exception.ExternalServiceException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/v1/test-get-only")
         public String getOnly() {
             return "ok";
+        }
+
+        @GetMapping("/v1/test-external-service-error")
+        public String externalServiceError() {
+            throw new ExternalServiceException("Google Vision API key AIza-secret-internal-detail rejected");
         }
 
         @PostMapping("/v1/test-body")
@@ -94,6 +100,15 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.details.name").exists());
+    }
+
+    @Test
+    void externalServiceExceptionReturns502WithoutLeakingRawMessage() throws Exception {
+        mockMvc.perform(get("/v1/test-external-service-error").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("EXTERNAL_SERVICE_ERROR"))
+                .andExpect(content().string(not(containsString("AIza-secret-internal-detail"))));
     }
 
     @Test

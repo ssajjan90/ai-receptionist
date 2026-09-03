@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.sql.PreparedStatement;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,12 +89,26 @@ class TenantRegistrationTest extends AbstractIntegrationTest {
         );
         assertThat(tenantId).isNotNull();
 
-        Integer subscriptionCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM subscriptions WHERE tenant_id = ? AND tier = 'BASIC' AND status = 'ACTIVE'",
-                Integer.class,
-                tenantId
-        );
-        assertThat(subscriptionCount).isEqualTo(1);
+        // subscriptions carries RLS (V8/W99): an unscoped query sees zero rows regardless of what
+        // was provisioned, so app.current_tenant must be set on this connection first.
+        UUID scopedTenantId = tenantId;
+        Long subscriptionCount = jdbcTemplate.execute((ConnectionCallback<Long>) connection -> {
+            try {
+                connection.createStatement().execute(
+                        "SELECT set_config('app.current_tenant', '" + scopedTenantId + "', false)");
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM subscriptions WHERE tenant_id = ? AND tier = 'BASIC' AND status = 'ACTIVE'")) {
+                    statement.setObject(1, scopedTenantId);
+                    try (var resultSet = statement.executeQuery()) {
+                        resultSet.next();
+                        return resultSet.getLong(1);
+                    }
+                }
+            } finally {
+                connection.createStatement().execute("RESET app.current_tenant");
+            }
+        });
+        assertThat(subscriptionCount).isEqualTo(1L);
         assertThat(redisTemplate.opsForValue().get("otp:" + ownerPhone)).isNull();
     }
 }

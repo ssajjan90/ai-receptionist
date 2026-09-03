@@ -9,6 +9,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -31,9 +32,16 @@ services:
         condition: service_started
     environment:
       SPRING_PROFILES_ACTIVE: local
+      # Runtime traffic connects as the restricted, non-superuser app_runtime role (see
+      # docker/postgres-init/01-create-app-runtime-role.sql and W99) so RLS is actually enforced.
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/aireceptionist
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_USERNAME: app_runtime
+      SPRING_DATASOURCE_PASSWORD: app_runtime_password
+      # Flyway needs DDL/extension privileges app_runtime doesn't have, so it keeps using the
+      # bootstrap superuser and owns every table it creates.
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/aireceptionist
+      SPRING_FLYWAY_USER: postgres
+      SPRING_FLYWAY_PASSWORD: postgres
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
 

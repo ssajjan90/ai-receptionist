@@ -91,8 +91,26 @@ class TenantErasureTest extends AbstractIntegrationTest {
         return tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
     }
 
+    // Every one of these tables carries RLS (V8/W99): an unscoped query correctly sees zero rows
+    // regardless of what's actually there, so this must set app.current_tenant first or the
+    // "still there" assertions below would be trivially satisfied by RLS hiding the rows, not by
+    // genuinely proving they survived.
     private long countRows(String table, UUID tenantId) {
-        Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE tenant_id = ?", Long.class, tenantId);
+        Long count = jdbcTemplate.execute((ConnectionCallback<Long>) connection -> {
+            try {
+                setTenant(connection, tenantId);
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM " + table + " WHERE tenant_id = ?")) {
+                    statement.setObject(1, tenantId);
+                    try (var resultSet = statement.executeQuery()) {
+                        resultSet.next();
+                        return resultSet.getLong(1);
+                    }
+                }
+            } finally {
+                resetTenant(connection);
+            }
+        });
         return count == null ? -1 : count;
     }
 
@@ -106,8 +124,7 @@ class TenantErasureTest extends AbstractIntegrationTest {
                 .andExpect(status().isNoContent());
 
         // AC6: explicit zero-rows check on knowledge_entries.
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM knowledge_entries WHERE tenant_id = ?", Long.class, tenantId)).isZero();
+        assertThat(countRows("knowledge_entries", tenantId)).isZero();
         assertThat(countRows("leads", tenantId)).isZero();
         assertThat(countRows("whatsapp_messages", tenantId)).isZero();
 

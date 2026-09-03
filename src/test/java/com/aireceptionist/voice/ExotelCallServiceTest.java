@@ -1,6 +1,7 @@
 package com.aireceptionist.voice;
 
 import com.aireceptionist.AbstractIntegrationTest;
+import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.voice.domain.VoiceCall;
 import com.aireceptionist.voice.domain.VoiceCallStatus;
 import com.aireceptionist.voice.event.VoiceCallReceivedEvent;
@@ -46,8 +47,17 @@ class ExotelCallServiceTest extends AbstractIntegrationTest {
         eventPublisher.publishEvent(new VoiceCallReceivedEvent(
                 tenantId.toString(), callSid, "+919876543210", "+911234567890"));
 
+        // voice_calls carries RLS (V8/W99): the listener correctly sets TenantContext around its
+        // own save (ExotelCallService), but this verification read runs on the test thread, which
+        // has no tenant context of its own — it needs the same scope.
         await().atMost(15, TimeUnit.SECONDS).untilAsserted(() -> {
-            Optional<VoiceCall> saved = voiceCallRepository.findByCallSid(callSid);
+            TenantContext.setCurrentTenant(tenantId.toString());
+            Optional<VoiceCall> saved;
+            try {
+                saved = voiceCallRepository.findByCallSid(callSid);
+            } finally {
+                TenantContext.clear();
+            }
             assertThat(saved).isPresent();
             assertThat(saved.get().getTenantId()).isEqualTo(tenantId);
             assertThat(saved.get().getCallerPhone()).isEqualTo("+919876543210");

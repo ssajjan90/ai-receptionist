@@ -5,13 +5,13 @@ import com.aireceptionist.common.security.JwtTokenProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.sql.PreparedStatement;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,19 +33,38 @@ class LeadListPerformanceTest extends AbstractIntegrationTest {
                 "INSERT INTO tenants (id, business_name, phone_number, tier, status) VALUES (?, ?, ?, 'PRO', 'ACTIVE')",
                 tenantId, "Perf Test Business", "+91" + System.nanoTime() % 10_000_000_000L);
 
-        List<Object[]> rows = new ArrayList<>(1000);
         Instant now = Instant.now();
-        for (int i = 0; i < 1000; i++) {
-            rows.add(new Object[]{
-                    UUID.randomUUID(), tenantId, "Customer " + i, "+9199" + String.format("%08d", i),
-                    "Product " + i, "WHATSAPP", "NEW", Timestamp.from(now), "WHATSAPP",
-                    Timestamp.from(now.minusSeconds(i)), Timestamp.from(now.minusSeconds(i))
-            });
-        }
-        jdbcTemplate.batchUpdate(
-                "INSERT INTO leads (id, tenant_id, name, phone, intent, channel, status, consent_timestamp, " +
-                        "consent_channel, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                rows);
+        // leads carries RLS (V8/W99): app.current_tenant must be set on the same connection
+        // before this batch insert, or every row is rejected by the WITH CHECK policy — a plain
+        // jdbcTemplate.batchUpdate() borrows its own connection with no tenant context at all.
+        jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            try {
+                connection.createStatement().execute(
+                        "SELECT set_config('app.current_tenant', '" + tenantId + "', false)");
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "INSERT INTO leads (id, tenant_id, name, phone, intent, channel, status, consent_timestamp, "
+                                + "consent_channel, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    for (int i = 0; i < 1000; i++) {
+                        statement.setObject(1, UUID.randomUUID());
+                        statement.setObject(2, tenantId);
+                        statement.setString(3, "Customer " + i);
+                        statement.setString(4, "+9199" + String.format("%08d", i));
+                        statement.setString(5, "Product " + i);
+                        statement.setString(6, "WHATSAPP");
+                        statement.setString(7, "NEW");
+                        statement.setTimestamp(8, Timestamp.from(now));
+                        statement.setString(9, "WHATSAPP");
+                        statement.setTimestamp(10, Timestamp.from(now.minusSeconds(i)));
+                        statement.setTimestamp(11, Timestamp.from(now.minusSeconds(i)));
+                        statement.addBatch();
+                    }
+                    statement.executeBatch();
+                }
+            } finally {
+                connection.createStatement().execute("RESET app.current_tenant");
+            }
+            return null;
+        });
         return tenantId;
     }
 

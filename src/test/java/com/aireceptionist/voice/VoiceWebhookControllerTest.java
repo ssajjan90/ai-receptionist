@@ -1,6 +1,8 @@
 package com.aireceptionist.voice;
 
 import com.aireceptionist.AbstractIntegrationTest;
+import com.aireceptionist.common.multitenancy.TenantContext;
+import com.aireceptionist.voice.domain.VoiceCall;
 import com.aireceptionist.voice.repository.VoiceCallRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +15,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -42,12 +45,28 @@ class VoiceWebhookControllerTest extends AbstractIntegrationTest {
     @Value("${app.exotel.shared-secret}")
     String sharedSecret;
 
-    private String seedTenant(String tier) {
+    private record TenantSeed(UUID tenantId, String businessPhone) {
+    }
+
+    private TenantSeed seedTenant(String tier) {
+        UUID tenantId = UUID.randomUUID();
         String businessPhone = "+91" + System.nanoTime() % 10_000_000_000L;
         jdbcTemplate.update(
                 "INSERT INTO tenants (id, business_name, phone_number, tier, status) VALUES (?, ?, ?, ?, 'LIVE')",
-                UUID.randomUUID(), "Voice Webhook Test Business", businessPhone, tier);
-        return businessPhone;
+                tenantId, "Voice Webhook Test Business", businessPhone, tier);
+        return new TenantSeed(tenantId, businessPhone);
+    }
+
+    // voice_calls carries RLS (V8/W99): the async listener correctly scopes its own save
+    // (ExotelCallService), but this verification read runs on the test thread, which has no
+    // tenant context of its own — it needs the same scope.
+    private Optional<VoiceCall> findVoiceCallScoped(UUID tenantId, String callSid) {
+        TenantContext.setCurrentTenant(tenantId.toString());
+        try {
+            return voiceCallRepository.findByCallSid(callSid);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     private String sign(String callSid, String from, String to, String direction, String status) throws Exception {
@@ -59,7 +78,8 @@ class VoiceWebhookControllerTest extends AbstractIntegrationTest {
 
     @Test
     void proTierAcceptsCallAndRecordsVoiceCall() throws Exception {
-        String to = seedTenant("PRO");
+        TenantSeed tenant = seedTenant("PRO");
+        String to = tenant.businessPhone();
         String callSid = "CA-" + UUID.randomUUID();
         String from = "+919876543210";
         String direction = "inbound";
@@ -77,12 +97,13 @@ class VoiceWebhookControllerTest extends AbstractIntegrationTest {
                 .andExpect(content().string(containsString("<Record")));
 
         await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                assertThat(voiceCallRepository.findByCallSid(callSid)).isPresent());
+                assertThat(findVoiceCallScoped(tenant.tenantId(), callSid)).isPresent());
     }
 
     @Test
     void basicTierRedirectsToWhatsAppWithoutRecordingVoiceCall() throws Exception {
-        String to = seedTenant("BASIC");
+        TenantSeed tenant = seedTenant("BASIC");
+        String to = tenant.businessPhone();
         String callSid = "CA-" + UUID.randomUUID();
         String from = "+919876543210";
         String direction = "inbound";
@@ -102,12 +123,13 @@ class VoiceWebhookControllerTest extends AbstractIntegrationTest {
 
         // No async event published for BASIC — give any accidental listener a moment, then assert absence.
         Thread.sleep(500);
-        assertThat(voiceCallRepository.findByCallSid(callSid)).isEmpty();
+        assertThat(findVoiceCallScoped(tenant.tenantId(), callSid)).isEmpty();
     }
 
     @Test
     void invalidSignatureReturns200WithNoTenantLookupOrVoiceCall() throws Exception {
-        String to = seedTenant("PRO");
+        TenantSeed tenant = seedTenant("PRO");
+        String to = tenant.businessPhone();
         String callSid = "CA-" + UUID.randomUUID();
 
         mockMvc.perform(post("/webhooks/voice")
@@ -121,12 +143,13 @@ class VoiceWebhookControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         Thread.sleep(500);
-        assertThat(voiceCallRepository.findByCallSid(callSid)).isEmpty();
+        assertThat(findVoiceCallScoped(tenant.tenantId(), callSid)).isEmpty();
     }
 
     @Test
     void missingSignatureReturns200WithNoVoiceCall() throws Exception {
-        String to = seedTenant("PRO");
+        TenantSeed tenant = seedTenant("PRO");
+        String to = tenant.businessPhone();
         String callSid = "CA-" + UUID.randomUUID();
 
         mockMvc.perform(post("/webhooks/voice")
@@ -139,7 +162,7 @@ class VoiceWebhookControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
 
         Thread.sleep(500);
-        assertThat(voiceCallRepository.findByCallSid(callSid)).isEmpty();
+        assertThat(findVoiceCallScoped(tenant.tenantId(), callSid)).isEmpty();
     }
 
     @Test

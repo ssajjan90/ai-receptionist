@@ -1,6 +1,7 @@
 package com.aireceptionist.knowledgebase;
 
 import com.aireceptionist.AbstractIntegrationTest;
+import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.knowledgebase.repository.KnowledgeEntryRepository;
 import com.aireceptionist.knowledgebase.service.KnowledgeBaseService;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +50,16 @@ class KnowledgeBasePropagationTest extends AbstractIntegrationTest {
         container.start();
 
         try {
-            knowledgeBaseService.addOrUpdateProduct(tenantId, "Test Widget", "500");
+            // KnowledgeBaseService relies entirely on the caller having already set
+            // TenantContext (normally done by the JWT filter for an HTTP request, or by the
+            // WhatsApp owner-command listener for an event-driven call) — knowledge_entries
+            // carries RLS (V8/W99), so a direct service call in a test needs the same wrapping.
+            TenantContext.setCurrentTenant(tenantId.toString());
+            try {
+                knowledgeBaseService.addOrUpdateProduct(tenantId, "Test Widget", "500");
+            } finally {
+                TenantContext.clear();
+            }
 
             boolean received = latch.await(2, TimeUnit.SECONDS);
             assertThat(received).as("kb:update pub/sub event must be received within 2 seconds").isTrue();
@@ -69,7 +79,12 @@ class KnowledgeBasePropagationTest extends AbstractIntegrationTest {
         redisTemplate.opsForValue().set(cacheKey, "cached-response");
         assertThat(redisTemplate.opsForValue().get(cacheKey)).isNotNull();
 
-        knowledgeBaseService.addOrUpdateProduct(tenantId, "Gadget Pro", "1200");
+        TenantContext.setCurrentTenant(tenantId.toString());
+        try {
+            knowledgeBaseService.addOrUpdateProduct(tenantId, "Gadget Pro", "1200");
+        } finally {
+            TenantContext.clear();
+        }
 
         // Allow async cache eviction time
         Thread.sleep(500);
@@ -82,8 +97,13 @@ class KnowledgeBasePropagationTest extends AbstractIntegrationTest {
         UUID tenantId = UUID.randomUUID();
 
         // First add a product so we can delete it
-        knowledgeBaseService.addOrUpdateProduct(tenantId, "Temp Product", "999");
-        assertThat(entryRepository.findByTenantIdAndProductName(tenantId, "Temp Product")).isPresent();
+        TenantContext.setCurrentTenant(tenantId.toString());
+        try {
+            knowledgeBaseService.addOrUpdateProduct(tenantId, "Temp Product", "999");
+            assertThat(entryRepository.findByTenantIdAndProductName(tenantId, "Temp Product")).isPresent();
+        } finally {
+            TenantContext.clear();
+        }
 
         // Pre-populate cache
         String cacheKey = "tenant:" + tenantId + ":query:anotherhash";
@@ -99,7 +119,13 @@ class KnowledgeBasePropagationTest extends AbstractIntegrationTest {
         container.start();
 
         try {
-            boolean deleted = knowledgeBaseService.deleteEntry(tenantId, "Temp Product");
+            TenantContext.setCurrentTenant(tenantId.toString());
+            boolean deleted;
+            try {
+                deleted = knowledgeBaseService.deleteEntry(tenantId, "Temp Product");
+            } finally {
+                TenantContext.clear();
+            }
             assertThat(deleted).isTrue();
 
             boolean received = latch.await(2, TimeUnit.SECONDS);

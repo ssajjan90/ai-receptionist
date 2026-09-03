@@ -1,5 +1,11 @@
--- FORCE ROW LEVEL SECURITY ensures RLS applies even to superusers / table owners.
--- Required so Testcontainers' postgres superuser is also subject to RLS in integration tests.
+-- FORCE ROW LEVEL SECURITY removes the table OWNER's exemption from these policies. It does
+-- NOT affect superusers: per Postgres docs, superusers and BYPASSRLS roles always bypass RLS
+-- outright, FORCE notwithstanding (this was W99 — a prior version of this comment claimed FORCE
+-- covered superusers too, which is false and was silently making RLS a no-op whenever the app
+-- connected as one). The runtime role the application connects with (app.datasource.*, distinct
+-- from the migration role that owns these tables — see docker-compose.yml's app_runtime role and
+-- AbstractIntegrationTest's equivalent for Testcontainers) MUST be NOSUPERUSER and NOBYPASSRLS,
+-- or these policies provide no real protection regardless of FORCE.
 --
 -- Policy: tenant_id::text = current_setting('app.current_tenant', true)
 --   missing_ok=true → returns NULL when setting is absent → zero rows visible (secure default).

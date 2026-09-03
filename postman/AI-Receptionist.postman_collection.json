@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AI Receptionist (callsahayak)",
-    "description": "Full local test collection. Import this + the 'AI Receptionist - Local' environment, select that environment, then work through the folders in order: 1 Tenant Onboarding -> 2 WhatsApp -> 3 Knowledge Base -> 4 Leads -> 5 Admin. See postman/README.md in the repo for the full step-by-step guide.",
+    "description": "Full local test collection (Epics 1-6). Import this + the 'AI Receptionist - Local' environment, select that environment, then work through the folders in order: 1 Tenant Onboarding -> 2 WhatsApp -> 3 Knowledge Base -> 4 Leads -> 5 Admin -> 6 Voice. See postman/README.md in the repo for the full step-by-step guide, or docs/API_TESTING_GUIDE.md for the complete written reference including curl equivalents.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -93,6 +93,24 @@
             "url": { "raw": "{{baseUrl}}/v1/tenants/{{tenantId}}/onboarding", "host": ["{{baseUrl}}"], "path": ["v1", "tenants", "{{tenantId}}", "onboarding"] },
             "description": "Auth required (OWNER JWT, tenantId in path must match JWT's tenantId claim). Converts topProducts/commonFaqs into initial knowledge-base entries - good way to seed KB data for testing section 3."
           }
+        },
+        {
+          "name": "1.5 Export My Data (DPDP)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{ownerJwt}}" } ],
+            "url": { "raw": "{{baseUrl}}/v1/tenants/{{tenantId}}/export", "host": ["{{baseUrl}}"], "path": ["v1", "tenants", "{{tenantId}}", "export"] },
+            "description": "Story 5.5 (AC1). Auth required, owner can only export their own tenantId. Returns knowledge-base entries, non-erased leads, and WhatsApp message content as SHA-256 hashes (not raw text - see W111 in docs/implementation-status.md for a known caveat: unsalted hashes are reversible for short/common messages)."
+          }
+        },
+        {
+          "name": "1.6 Erase My Account (DPDP - DESTRUCTIVE)",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Bearer {{ownerJwt}}" } ],
+            "url": { "raw": "{{baseUrl}}/v1/tenants/{{tenantId}}", "host": ["{{baseUrl}}"], "path": ["v1", "tenants", "{{tenantId}}"] },
+            "description": "Story 5.5 (AC3-AC5). DESTRUCTIVE AND IMMEDIATE - unlike admin's suspend/terminate (which schedule erasure after a 30-day grace period), this erases the tenant's data NOW and scrubs the tenants row's own PII. Only run this against a throwaway tenant you registered for testing. 204 No Content on success; the tenantId/ownerJwt environment values are now dead afterward - re-run 1.1-1.2 with a new phone number to start over."
+          }
         }
       ]
     },
@@ -101,6 +119,19 @@
       "item": [
         {
           "name": "2.1 Connect WhatsApp Number",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Randomized per run - a fixed phoneNumberId collides with PHONE_ALREADY_REGISTERED on any repeat run.",
+                  "pm.environment.set('waPhoneNumberId', 'phone-id-test-' + Date.now());",
+                  "pm.environment.set('waWabaId', 'waba-test-' + Date.now());"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -109,10 +140,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"wabaId\": \"waba-test-123\",\n  \"phoneNumberId\": \"phone-id-test-456\",\n  \"displayPhoneNumber\": \"{{businessPhone}}\"\n}"
+              "raw": "{\n  \"wabaId\": \"{{waWabaId}}\",\n  \"phoneNumberId\": \"{{waPhoneNumberId}}\",\n  \"displayPhoneNumber\": \"{{businessPhone}}\"\n}"
             },
             "url": { "raw": "{{baseUrl}}/v1/tenants/{{tenantId}}/whatsapp/connect", "host": ["{{baseUrl}}"], "path": ["v1", "tenants", "{{tenantId}}", "whatsapp", "connect"] },
-            "description": "Auth required. Links a (fake, for local testing) Meta WABA phone number ID to the tenant."
+            "description": "Auth required. Links a (fake, for local testing) Meta WABA phone number ID to the tenant. Sets waPhoneNumberId/waWabaId env vars used by 2.2/2.3's `To` field below."
           }
         },
         {
@@ -124,13 +155,13 @@
               "mode": "urlencoded",
               "urlencoded": [
                 { "key": "From", "value": "whatsapp:+919999999999" },
-                { "key": "To", "value": "whatsapp:{{businessPhone}}" },
+                { "key": "To", "value": "whatsapp:{{waPhoneNumberId}}" },
                 { "key": "Body", "value": "Do you have Samsung Galaxy S24 in stock?" },
                 { "key": "MessageSid", "value": "SM_test_{{$timestamp}}" }
               ]
             },
             "url": { "raw": "{{baseUrl}}/webhooks/whatsapp/twilio", "host": ["{{baseUrl}}"], "path": ["webhooks", "whatsapp", "twilio"] },
-            "description": "permitAll, NO signature check - local/dev only entry point (do not expose in prod). Simulates an inbound customer WhatsApp message via the Twilio sandbox shape (not Meta's). Triggers the AI response pipeline (Epic 3) if OPENAI keys are configured; otherwise expect a fallback/error response, which is still useful for testing routing."
+            "description": "permitAll, NO signature check - local/dev only entry point (do not expose in prod). Simulates an inbound customer WhatsApp message via the Twilio sandbox shape (not Meta's). Triggers the AI response pipeline (Epic 3) if OPENAI keys are configured; otherwise expect a fallback/error response, which is still useful for testing routing.\n\nIMPORTANT: `To` must be the tenant's `phoneNumberId` (waPhoneNumberId, set by 2.1), NOT the business phone number - the controller resolves the tenant via resolveByPhoneNumberId(toPhone). Using the raw phone number here silently no-ops (200 response, 'No tenant found' in the app log, nothing written) - found and fixed 2026-09-03, this fixture had been wrong since the collection was first authored.\n\nProcessing is async (@ApplicationModuleListener) - if nothing shows up after a few seconds, check the app log for exceptions rather than assuming the request itself failed."
           }
         },
         {
@@ -142,13 +173,13 @@
               "mode": "urlencoded",
               "urlencoded": [
                 { "key": "From", "value": "whatsapp:{{ownerPhone}}" },
-                { "key": "To", "value": "whatsapp:{{businessPhone}}" },
+                { "key": "To", "value": "whatsapp:{{waPhoneNumberId}}" },
                 { "key": "Body", "value": "ADD FAQ: Do you offer home delivery? | Yes, free delivery within 5km." },
                 { "key": "MessageSid", "value": "SM_test_{{$timestamp}}" }
               ]
             },
             "url": { "raw": "{{baseUrl}}/webhooks/whatsapp/twilio", "host": ["{{baseUrl}}"], "path": ["webhooks", "whatsapp", "twilio"] },
-            "description": "Same webhook as 2.2, but From = the registered ownerPhone, so OwnerCommandParser handles it instead of the AI pipeline (Story 3.6 KB management via WhatsApp commands)."
+            "description": "Same webhook as 2.2, but From = the registered ownerPhone, so OwnerCommandParser handles it instead of the AI pipeline (Story 3.6 KB management via WhatsApp commands). Same `To` fix as 2.2 applies here - see its description."
           }
         }
       ]
@@ -308,7 +339,7 @@
       ]
     },
     {
-      "name": "5 - Admin (Story 5-1)",
+      "name": "5 - Admin (Epic 5)",
       "item": [
         {
           "name": "5.1 List All Tenants (dashboard)",
@@ -325,6 +356,163 @@
             "method": "GET",
             "header": [ { "key": "Authorization", "value": "Bearer {{adminJwt}}" } ],
             "url": { "raw": "{{baseUrl}}/v1/admin/tenants/{{tenantId}}", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "tenants", "{{tenantId}}"] }
+          }
+        },
+        {
+          "name": "5.3 Export Tenant Data (admin copy)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{adminJwt}}" } ],
+            "url": { "raw": "{{baseUrl}}/v1/admin/tenants/{{tenantId}}/export", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "tenants", "{{tenantId}}", "export"] },
+            "description": "Story 5.5 (AC2). Same shape as owner-facing 1.5, but any admin can pull any tenant's export. Writes an ADMIN_DATA_EXPORT audit entry (see 5.10)."
+          }
+        },
+        {
+          "name": "5.4 Get Tenant Conversations",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{adminJwt}}" } ],
+            "url": { "raw": "{{baseUrl}}/v1/admin/tenants/{{tenantId}}/conversations?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "tenants", "{{tenantId}}", "conversations"], "query": [ { "key": "page", "value": "0" }, { "key": "size", "value": "20" }, { "key": "from", "value": "", "disabled": true }, { "key": "to", "value": "", "disabled": true } ] },
+            "description": "Story 5.3 (AC1-AC4). Optional from/to as ISO-8601 instants (e.g. 2026-01-01T00:00:00Z). Writes an ADMIN_CONVERSATION_VIEW audit entry. If a lead for this tenant was erased, that message's content shows redacted, not raw."
+          }
+        },
+        {
+          "name": "5.5 Suspend Tenant",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{adminJwt}}" } ],
+            "url": { "raw": "{{baseUrl}}/v1/admin/tenants/{{tenantId}}/suspend", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "tenants", "{{tenantId}}", "suspend"] },
+            "description": "Story 5.2 (AC1). Sets status=SUSPENDED - inbound WhatsApp messages get a fixed 'service unavailable' reply instead of AI processing (see WhatsAppMessageService.NON_LIVE_BLOCKED_STATUSES). Reversible via 5.6."
+          }
+        },
+        {
+          "name": "5.6 Reactivate Tenant",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{adminJwt}}" } ],
+            "url": { "raw": "{{baseUrl}}/v1/admin/tenants/{{tenantId}}/reactivate", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "tenants", "{{tenantId}}", "reactivate"] },
+            "description": "Story 5.2 (AC2). Sets status=LIVE and clears any pending termination schedule."
+          }
+        },
+        {
+          "name": "5.7 Terminate Tenant (30-day grace period)",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Bearer {{adminJwt}}" } ],
+            "url": { "raw": "{{baseUrl}}/v1/admin/tenants/{{tenantId}}", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "tenants", "{{tenantId}}"] },
+            "description": "Story 5.2 (AC3). NOT immediate like 1.6 - sets status=TERMINATED and schedules real data erasure 30 days out (ScheduledDataRetentionJob). Safe to run on a test tenant; nothing is destroyed right away."
+          }
+        },
+        {
+          "name": "5.8 Notify Tenant (single WhatsApp message)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminJwt}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Heads up: scheduled maintenance tonight 11pm-12am IST.\"\n}" },
+            "url": { "raw": "{{baseUrl}}/v1/admin/tenants/{{tenantId}}/notify", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "tenants", "{{tenantId}}", "notify"] },
+            "description": "Story 5.4 (AC1-AC3). Rate-limited to 10/min per admin (shared bucket with 5.9 Broadcast). message max 1000 chars."
+          }
+        },
+        {
+          "name": "5.9 Broadcast (multi-tenant WhatsApp message)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminJwt}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"tenantIds\": [\"{{tenantId}}\"],\n  \"message\": \"New feature: voice call support is now live for Pro/Enterprise tiers.\"\n}" },
+            "url": { "raw": "{{baseUrl}}/v1/admin/broadcast", "host": ["{{baseUrl}}"], "path": ["v1", "admin", "broadcast"] },
+            "description": "Story 5.4 (AC4). tenantIds capped at 100 entries. One call = one rate-limit token (same bucket as 5.8), regardless of list size."
+          }
+        },
+        {
+          "name": "5.10 Query Audit Log (keyset pagination)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.hasMore) {",
+                  "  pm.environment.set('auditCursorOccurredAt', json.data.nextCursorOccurredAt);",
+                  "  pm.environment.set('auditCursorId', json.data.nextCursorId);",
+                  "  console.log('More pages available - cursor vars saved, re-run this request for the next page');",
+                  "} else {",
+                  "  console.log('No more pages (hasMore=false)');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{adminJwt}}" } ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/audit-log?tenantId={{tenantId}}&size=10&cursorOccurredAt={{auditCursorOccurredAt}}&cursorId={{auditCursorId}}",
+              "host": ["{{baseUrl}}"], "path": ["v1", "admin", "audit-log"],
+              "query": [
+                { "key": "tenantId", "value": "{{tenantId}}" },
+                { "key": "size", "value": "10" },
+                { "key": "cursorOccurredAt", "value": "{{auditCursorOccurredAt}}" },
+                { "key": "cursorId", "value": "{{auditCursorId}}" },
+                { "key": "eventType", "value": "", "disabled": true },
+                { "key": "from", "value": "", "disabled": true },
+                { "key": "to", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Story 5.6 (AC1-AC4). tenantId is REQUIRED (query param, unlike other admin endpoints where it's in the path). Code review 2026-09-03: uses keyset/seek pagination, NOT page numbers - the response's nextCursorOccurredAt/nextCursorId (when hasMore=true) get auto-saved by this request's test script into the cursorOccurredAt/cursorId env vars, so just re-run this same request to fetch the next page. Leave the cursor vars blank to start from the newest row. Excludes rows older than 90 days. This call itself writes an ADMIN_AUDIT_VIEW row, so its own access shows up on your next page fetch."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 - Voice (Epic 6, Story 6-1)",
+      "item": [
+        {
+          "name": "6.1 Inbound Call (Exotel webhook)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('exotelSharedSecret') || 'test-exotel-shared-secret';",
+                  "const callSid = 'CA_test_' + Date.now();",
+                  "const from = '+919999999999';",
+                  "const to = pm.environment.get('businessPhone');",
+                  "const direction = 'inbound';",
+                  "const status = 'ringing';",
+                  "const canonical = callSid + from + to + direction + status;",
+                  "const signature = CryptoJS.HmacSHA1(canonical, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.environment.set('voiceCallSid', callSid);",
+                  "pm.environment.set('voiceSignature', signature);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" },
+              { "key": "X-Exotel-Signature", "value": "{{voiceSignature}}" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "CallSid", "value": "{{voiceCallSid}}" },
+                { "key": "From", "value": "+919999999999" },
+                { "key": "To", "value": "{{businessPhone}}" },
+                { "key": "Direction", "value": "inbound" },
+                { "key": "Status", "value": "ringing" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/webhooks/voice", "host": ["{{baseUrl}}"], "path": ["webhooks", "voice"] },
+            "description": "Story 6.1 (AC1-AC5). permitAll, but signature-verified (pre-request script signs the form fields with HMAC-SHA1 using the exotelSharedSecret env var, which must match app.exotel.shared-secret - the default 'test-exotel-shared-secret' matches application.yml's local default). Returns raw ExoML (XML), not the usual JSON envelope. New tenants default to tier=BASIC, so expect a <Play>...WhatsApp...</Play><Hangup/> redirect response. To see the PRO/ENTERPRISE <Record> AI-handoff path instead, no upgrade endpoint exists yet (Epic 7 billing) - manually run against your local DB:\nUPDATE tenants SET tier='PRO' WHERE id='{{tenantId}}';\nthen re-run this request."
           }
         }
       ]

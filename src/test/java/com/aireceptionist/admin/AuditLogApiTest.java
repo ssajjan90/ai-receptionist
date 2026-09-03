@@ -120,9 +120,12 @@ class AuditLogApiTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken()))
                 .andExpect(status().isOk());
 
-        Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM audit_log WHERE tenant_id = ? AND event_type = 'ADMIN_AUDIT_VIEW' AND occurred_at > ?",
-                Long.class, tenantId, java.sql.Timestamp.from(before));
+        // audit_log carries RLS (V9); a raw, tenant-unscoped query here would deterministically
+        // see zero rows regardless of what the app wrote — same secure default TenantRlsTest
+        // covers directly. Reuse the repository's own tenant-scoped read (already used the same
+        // way by TenantDataExportTest) rather than duplicating the set_config dance in the test.
+        long count = auditLogRepository.countByTenantIdAndEventTypeAndOccurredAtAfter(
+                tenantId, "ADMIN_AUDIT_VIEW", before);
         org.assertj.core.api.Assertions.assertThat(count).isEqualTo(1L);
     }
 

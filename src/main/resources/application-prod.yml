@@ -1,3 +1,12 @@
+# Required for row-level security to mean anything in production (W99): DB_USERNAME must be a
+# NOSUPERUSER, NOBYPASSRLS role that does not own the app's tables, and DB_MIGRATION_USERNAME
+# must be set separately to whatever privileged role actually owns them and runs Flyway. If
+# DB_MIGRATION_USERNAME is left unset, Flyway silently falls back to DB_USERNAME (see
+# application.yml) — i.e. a single shared superuser for everything, which makes every RLS policy
+# in V8__create_rls_policies.sql a no-op regardless of FORCE ROW LEVEL SECURITY. See
+# docker/postgres-init/01-create-app-runtime-role.sql for the equivalent local/docker-compose
+# setup this mirrors.
+
 springdoc:
   api-docs:
     enabled: false

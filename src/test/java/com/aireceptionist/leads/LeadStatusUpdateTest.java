@@ -1,6 +1,7 @@
 package com.aireceptionist.leads;
 
 import com.aireceptionist.AbstractIntegrationTest;
+import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.common.security.JwtTokenProvider;
 import com.aireceptionist.leads.domain.Lead;
 import com.aireceptionist.leads.domain.LeadChannel;
@@ -37,13 +38,34 @@ class LeadStatusUpdateTest extends AbstractIntegrationTest {
         return tenantId;
     }
 
+    // leads carries RLS (V8/W99): leadRepository.save/findById rely on TenantContext (set for the
+    // duration of an HTTP request by the JWT filter), so a direct repository call from the test
+    // thread needs the same scope explicitly.
+    private Lead saveScoped(UUID tenantId, Lead lead) {
+        TenantContext.setCurrentTenant(tenantId.toString());
+        try {
+            return leadRepository.save(lead);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private java.util.Optional<Lead> findScoped(UUID tenantId, UUID leadId) {
+        TenantContext.setCurrentTenant(tenantId.toString());
+        try {
+            return leadRepository.findById(leadId);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
     @Test
     void patchUpdatesLeadStatusAndPersists() throws Exception {
         UUID tenantId = seedTenant();
         Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
                 "Samsung Galaxy S24", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
-        leadRepository.save(lead);
-        Instant originalUpdatedAt = leadRepository.findById(lead.getId()).orElseThrow().getUpdatedAt();
+        saveScoped(tenantId, lead);
+        Instant originalUpdatedAt = findScoped(tenantId, lead.getId()).orElseThrow().getUpdatedAt();
         String token = tokenProvider.generateToken(tenantId.toString(), tenantId.toString(), "OWNER", "PRO");
 
         mockMvc.perform(patch("/v1/tenants/" + tenantId + "/leads/" + lead.getId())
@@ -53,7 +75,7 @@ class LeadStatusUpdateTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("CONTACTED"));
 
-        assertThat(leadRepository.findById(lead.getId()))
+        assertThat(findScoped(tenantId, lead.getId()))
                 .isPresent()
                 .hasValueSatisfying(l -> {
                     assertThat(l.getStatus()).isEqualTo(LeadStatus.CONTACTED);
@@ -70,7 +92,7 @@ class LeadStatusUpdateTest extends AbstractIntegrationTest {
         UUID otherTenantId = seedTenant();
         Lead lead = Lead.create(ownerTenantId, "Ravi Kumar", "+919876543211",
                 "Samsung Galaxy S24", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
-        leadRepository.save(lead);
+        saveScoped(ownerTenantId, lead);
         String token = tokenProvider.generateToken(otherTenantId.toString(), otherTenantId.toString(), "OWNER", "PRO");
 
         mockMvc.perform(patch("/v1/tenants/" + otherTenantId + "/leads/" + lead.getId())
@@ -79,7 +101,7 @@ class LeadStatusUpdateTest extends AbstractIntegrationTest {
                         .content("{\"status\":\"CONTACTED\"}"))
                 .andExpect(status().isNotFound());
 
-        assertThat(leadRepository.findById(lead.getId()))
+        assertThat(findScoped(ownerTenantId, lead.getId()))
                 .isPresent()
                 .hasValueSatisfying(l -> assertThat(l.getStatus()).isEqualTo(LeadStatus.NEW));
     }

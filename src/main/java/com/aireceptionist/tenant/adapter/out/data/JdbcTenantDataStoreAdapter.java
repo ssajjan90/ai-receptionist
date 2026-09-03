@@ -3,12 +3,15 @@ package com.aireceptionist.tenant.adapter.out.data;
 import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.tenant.port.in.TenantDataExport;
 import com.aireceptionist.tenant.port.out.TenantDataStorePort;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -19,6 +22,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,10 +33,13 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
 
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
+    private final String messageHashSecret;
 
-    public JdbcTenantDataStoreAdapter(JdbcTemplate jdbcTemplate, Clock clock) {
+    public JdbcTenantDataStoreAdapter(JdbcTemplate jdbcTemplate, Clock clock,
+                                       @Value("${app.export.message-hash-secret}") String messageHashSecret) {
         this.jdbcTemplate = jdbcTemplate;
         this.clock = clock;
+        this.messageHashSecret = messageHashSecret;
     }
 
     @Override
@@ -75,7 +82,7 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
                                 FROM whatsapp_messages
                                 WHERE tenant_id = '%s'
                                 ORDER BY received_at, id
-                                """.formatted(tenantId)).stream().map(this::sha256Hex).toList();
+                                """.formatted(tenantId)).stream().map(this::hmacSha256Hex).toList();
                         return new TenantDataExport(
                                 tenantId,
                                 Instant.now(clock),
@@ -154,17 +161,16 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
         }
     }
 
-    private String sha256Hex(String value) {
+    // Keyed (HMAC) rather than plain SHA-256: freeform customer messages are frequently
+    // low-entropy ("yes", "ok", "hours?"), which a plain hash would let anyone holding an
+    // export reverse via a dictionary/rainbow-table attack (W111).
+    private String hmacSha256Hex(String value) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 digest unavailable", ex);
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(messageHashSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException | InvalidKeyException ex) {
+            throw new IllegalStateException("HmacSHA256 unavailable", ex);
         }
     }
 

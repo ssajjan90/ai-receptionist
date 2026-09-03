@@ -26,21 +26,36 @@
 ### 3 - Knowledge Base
 Standard CRUD, all verified working. `type` must be a valid `EntryType` enum value (`PRODUCT`, `FAQ`, etc.) — check `com.aireceptionist.knowledgebase.domain.EntryType` if you add other types and get a 400. The OCR endpoints (3.5/3.6) need real OCR provider credentials to do anything beyond validation — the shapes are correct, but expect them to fail locally without a configured key.
 
+Also see **1.5 Export My Data** / **1.6 Erase My Account** (DPDP, story 5.5) — 1.6 is destructive and immediate, only run it against a throwaway test tenant.
+
 ### 4 - Leads
 Leads only appear once the AI pipeline detects purchase intent from a customer message (folder 2) and actually completes — this needs a real LLM key configured. If **4.1 List Leads** comes back empty, that's expected without one; you can still exercise 4.2–4.5 manually once a lead exists.
 
-### 5 - Admin (Story 5-1)
-No login endpoint mints a `PLATFORM_ADMIN` token — there isn't one yet (out of scope for Story 5-1). To get one for testing:
+### 5 - Admin (Epic 5, stories 5.1-5.6)
+No login endpoint mints a `PLATFORM_ADMIN` token — there isn't one yet, and `admin_users` has zero rows in every environment. To get one for testing:
 ```bash
 cd /Users/macbookair/Desktop/Suresh/ai-receptionist
 node scripts/mint-admin-jwt.js
 ```
-This signs a token locally using the exact RSA key `application-local.yml` gives the running app (pure Node `crypto`, no install needed). Paste the output into the `adminJwt` environment variable, then run 5.1/5.2.
+This signs a token locally using the exact RSA key `application-local.yml` gives the running app (pure Node `crypto`, no install needed). Paste the output into the `adminJwt` environment variable, then run 5.1 onward.
+
+Covers: dashboard listing/detail (5.1-5.2), admin data export (5.3), conversation log viewer (5.4), suspend/reactivate/terminate (5.5-5.7), notify/broadcast (5.8-5.9), and the audit log (5.10). **5.10 uses keyset pagination, not page numbers** — its test script auto-saves `nextCursorOccurredAt`/`nextCursorId` from the response into the `auditCursorOccurredAt`/`auditCursorId` environment variables when `hasMore: true`; just re-run 5.10 to fetch the next page. 5.7 Terminate schedules erasure 30 days out (not immediate, unlike 1.6) — safe to run against a test tenant.
+
+### 6 - Voice (Epic 6, Story 6-1)
+`POST /webhooks/voice` — the Exotel telephony webhook. `permitAll` but signature-verified, unlike the Twilio WhatsApp sandbox (folder 2). 6.1's pre-request script computes the `X-Exotel-Signature` header automatically (HMAC-SHA1 over `CallSid+From+To+Direction+Status`, keyed with the `exotelSharedSecret` environment variable — defaults to `test-exotel-shared-secret`, matching `application.yml`'s local default). Returns raw ExoML (XML), not the JSON envelope.
+
+New tenants default to `tier=BASIC`, so expect a `<Play>...WhatsApp...</Play>` redirect. There's no tier-upgrade endpoint yet (Epic 7 billing isn't built) — to see the PRO/ENTERPRISE `<Record>` AI-handoff path, promote the tenant directly first:
+```sql
+UPDATE tenants SET tier='PRO' WHERE id='<tenantId>';
+```
 
 ## 3. Known gaps (not bugs, just not built yet)
 - No `/login` endpoint for returning owners — `verify-otp` is the only way to get a JWT, and it always registers-then-verifies.
 - No admin login/registration endpoint — use `mint-admin-jwt.js` for now.
-- Voice, Billing, and Franchise modules (Epics 6-8) have no controllers yet — nothing to test there.
+- No tier-upgrade endpoint — see folder 6's note above.
+- Franchise/multi-location modules (Epic 8) have no controllers yet — nothing to test there.
+
+See `docs/API_TESTING_GUIDE.md` for the full written reference (every endpoint with curl equivalents, response envelope shape, troubleshooting).
 
 ## 4. If you hit a 403/500 everywhere
 Two real bugs were found and fixed while building this collection (2026-07-16), both in shared infrastructure, not tenant-specific:
@@ -50,4 +65,4 @@ Two real bugs were found and fixed while building this collection (2026-07-16), 
 
 If you're on a fresh checkout and things are broken again, rebuild: `mvn package -DskipTests && docker compose build app && docker compose up -d app`.
 
-There's also a known, unresolved issue: migrations V19/V21 use `CREATE INDEX CONCURRENTLY`, which deadlocks against Flyway's own advisory-lock connection on a fresh database (reproduced twice, deterministically). It only bites on a *fresh* database (already resolved on your current local DB) — but will hit again on any new environment (new teammate, CI, prod). Recommended permanent fix: drop `CONCURRENTLY` from those two migrations.
+**Update 2026-09-01 (previously listed here as unresolved, now fixed):** migrations V19/V21 used to run `CREATE INDEX CONCURRENTLY`, which deadlocks against Flyway's own advisory-lock connection on a fresh database. Fixed by dropping `CONCURRENTLY` from both. If your local DB already had these migrations applied with the old file content before that fix landed, you'll hit a Flyway checksum mismatch on next startup — see `docs/API_TESTING_GUIDE.md` §1 for the repair steps (this is bookkeeping, not a schema problem — the index already exists either way).
