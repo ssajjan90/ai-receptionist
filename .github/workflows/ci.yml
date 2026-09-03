@@ -6,7 +6,52 @@ on:
   pull_request:
 
 jobs:
+  # 2026-09-03: previously a single `mvn verify` running all ~284 tests in one JVM. Every
+  # AbstractIntegrationTest subclass (~32 classes) that differs in @MockBean/@TestConfiguration
+  # forces a distinct Spring ApplicationContext, and the whole run's Testcontainers Postgres/Redis
+  # instances had to stay reachable for the full 15-20 minute run. Under sustained load this
+  # container became unreachable partway through (java.net.ConnectException: Connection refused
+  # to the same fixed mapped port across many later test classes — not a connection-pool-limit
+  # ceiling, confirmed by ruling that out first) — reproduced identically in this exact CI job and
+  # locally. Splitting into smaller groups, each its own job/runner/Docker daemon, bounds every
+  # single test JVM's lifetime and resource accumulation instead of one monolithic run.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group:
+          - name: admin
+            pattern: "com.aireceptionist.admin.**,com.aireceptionist.api.**,com.aireceptionist.audit.**,com.aireceptionist.billing.**"
+          - name: ai
+            pattern: "com.aireceptionist.ai.**,com.aireceptionist.resilience.**,com.aireceptionist.ratelimit.**"
+          - name: knowledgebase
+            pattern: "com.aireceptionist.knowledgebase.**,com.aireceptionist.common.**"
+          - name: leads
+            pattern: "com.aireceptionist.leads.**"
+          - name: tenant
+            pattern: "com.aireceptionist.tenant.**,com.aireceptionist.security.**"
+          - name: whatsapp-voice
+            pattern: "com.aireceptionist.whatsapp.**,com.aireceptionist.voice.**,com.aireceptionist.ApplicationContextLoadsTest"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Test (${{ matrix.group.name }})
+        run: mvn test -Dtest="${{ matrix.group.pattern }}" -DfailIfNoTests=false
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+
   build:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
@@ -20,10 +65,9 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build and test
-        run: mvn verify
-        env:
-          TESTCONTAINERS_RYUK_DISABLED: "true"
+      # Tests already ran (and gated this job via `needs: test`) — package only, no re-test.
+      - name: Package
+        run: mvn -DskipTests package
 
       - name: Build Docker image
         if: success()
