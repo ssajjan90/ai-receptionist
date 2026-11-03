@@ -7,6 +7,7 @@ import com.aireceptionist.ai.service.IntentDetectionService;
 import com.aireceptionist.ai.service.Language;
 import com.aireceptionist.ai.service.LanguageDetectionService;
 import com.aireceptionist.common.ai.AiResponseResult;
+import com.aireceptionist.common.billing.ConversationUsagePort;
 import com.aireceptionist.ai.service.LlmService;
 import com.aireceptionist.common.ai.TenantNamePort;
 import com.aireceptionist.common.ai.TenantOwnerPhonePort;
@@ -57,6 +58,11 @@ public class WhatsAppMessageService {
 
     // Code review (2026-09-01): TERMINATED/ERASED added alongside SUSPENDED/PAYMENT_SUSPENDED —
     // see the comment at the call site for why this guard must cover every non-LIVE status.
+    // Story 7.3 (AC2): BASIC tenant past its monthly conversation allowance.
+    static final String SERVICE_LIMIT_REACHED_MESSAGE =
+            "Sorry, our automated assistant is unavailable right now (service limit reached). "
+                    + "The business will get back to you soon.";
+
     private static final Set<String> NON_LIVE_BLOCKED_STATUSES =
             Set.of("SUSPENDED", "PAYMENT_SUSPENDED", "TERMINATED", "ERASED");
 
@@ -72,6 +78,7 @@ public class WhatsAppMessageService {
     private final GetTenantStatusUseCase getTenantStatusUseCase;
     private final ApplicationEventPublisher eventPublisher;
     private final StringRedisTemplate redisTemplate;
+    private final ConversationUsagePort conversationUsagePort;
 
     public WhatsAppMessageService(WhatsAppMessageRepository messageRepository,
                                   LanguageDetectionService languageDetectionService,
@@ -84,7 +91,8 @@ public class WhatsAppMessageService {
                                   IntentDetectionService intentDetectionService,
                                   GetTenantStatusUseCase getTenantStatusUseCase,
                                   ApplicationEventPublisher eventPublisher,
-                                  StringRedisTemplate redisTemplate) {
+                                  StringRedisTemplate redisTemplate,
+                                  ConversationUsagePort conversationUsagePort) {
         this.messageRepository = messageRepository;
         this.languageDetectionService = languageDetectionService;
         this.llmService = llmService;
@@ -97,6 +105,7 @@ public class WhatsAppMessageService {
         this.getTenantStatusUseCase = getTenantStatusUseCase;
         this.eventPublisher = eventPublisher;
         this.redisTemplate = redisTemplate;
+        this.conversationUsagePort = conversationUsagePort;
     }
 
     @ApplicationModuleListener
@@ -175,6 +184,23 @@ public class WhatsAppMessageService {
             );
             messageRepository.save(inbound);
 
+            // Story 7.3 (AC2): monthly allowance used up — fixed reply, no AI processing.
+            if (conversationUsagePort.isLimitReached(tenantId)) {
+                log.info("Conversation limit reached for tenant={}, sending limit reply", tenantId);
+                WhatsAppMessage limitReply = WhatsAppMessage.outboundAi(
+                        event.getTenantIdValue(), senderPhone, SERVICE_LIMIT_REACHED_MESSAGE, 1.0, "en");
+                messageRepository.save(limitReply);
+                try {
+                    notificationService.sendMessage(tenantId, senderPhone, SERVICE_LIMIT_REACHED_MESSAGE);
+                    limitReply.markSent();
+                } catch (Exception ex) {
+                    log.warn("Failed to deliver limit reply for tenant={}: {}", tenantId, ex.getMessage());
+                    limitReply.markFailed();
+                }
+                messageRepository.save(limitReply);
+                return;
+            }
+
             Language language = languageDetectionService.detectLanguage(messageText);
             log.debug("Detected language={} for tenant={}", language, tenantId);
 
@@ -227,6 +253,8 @@ public class WhatsAppMessageService {
                 outbound.markFailed();
             }
             messageRepository.save(outbound);
+            // Story 7.3 (AC3): one AI conversation metered per AI response sent.
+            conversationUsagePort.recordConversation(tenantId);
         } finally {
             TenantContext.clear();
             MDC.remove("tenantId");

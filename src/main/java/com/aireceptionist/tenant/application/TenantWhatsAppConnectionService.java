@@ -18,6 +18,7 @@ import com.aireceptionist.tenant.port.in.ResolvedTenantVoiceRoute;
 import com.aireceptionist.tenant.port.in.ResolvedTenantWhatsAppRoute;
 import com.aireceptionist.tenant.port.in.TenantDataRightsUseCase;
 import com.aireceptionist.tenant.port.in.TenantLifecycleUseCase;
+import com.aireceptionist.tenant.port.in.TenantBillingUseCase;
 import com.aireceptionist.tenant.port.out.TenantRegistrationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +30,7 @@ import java.util.UUID;
 @Service
 public class TenantWhatsAppConnectionService implements ConnectTenantWhatsAppUseCase,
         ResolveTenantByWhatsAppPhoneUseCase, ResolveTenantByBusinessPhoneUseCase, GetLiveTenantsUseCase,
-        GetTenantPhoneNumberIdUseCase, GetTenantStatusUseCase, TenantLifecycleUseCase {
+        GetTenantPhoneNumberIdUseCase, GetTenantStatusUseCase, TenantLifecycleUseCase, TenantBillingUseCase {
 
     private final TenantRegistrationRepository tenantRepository;
     private final TenantDataRightsUseCase tenantDataRightsUseCase;
@@ -167,6 +168,46 @@ public class TenantWhatsAppConnectionService implements ConnectTenantWhatsAppUse
         tenantDataRightsUseCase.eraseTenantData(tenantId);
         tenant.markErased();
         tenantRepository.save(tenant);
+    }
+
+    /** Story 7.1 (AC4). */
+    @Override
+    @Transactional
+    public void changeTier(UUID tenantId, String tier) {
+        BusinessTenant tenant = loadTenant(tenantId);
+        tenant.changeTier(tier);
+        tenantRepository.save(tenant);
+    }
+
+    /** Story 7.4 (AC1). Never overrides an admin SUSPENDED/TERMINATED/ERASED state. */
+    @Override
+    @Transactional
+    public void suspendForPayment(UUID tenantId) {
+        BusinessTenant tenant = loadTenant(tenantId);
+        if (tenant.getStatus() == TenantStatus.LIVE) {
+            tenant.suspendForPayment();
+            tenantRepository.save(tenant);
+        }
+    }
+
+    /** Story 7.4 (AC3). */
+    @Override
+    @Transactional
+    public boolean restoreFromPaymentSuspension(UUID tenantId) {
+        BusinessTenant tenant = loadTenant(tenantId);
+        boolean restored = tenant.restoreFromPaymentSuspension();
+        if (restored) {
+            tenantRepository.save(tenant);
+        }
+        return restored;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> getTenantIdsWithStatus(String status) {
+        return tenantRepository.findAllByStatus(TenantStatus.valueOf(status)).stream()
+                .map(BusinessTenant::getId)
+                .toList();
     }
 
     private BusinessTenant loadTenant(UUID tenantId) {

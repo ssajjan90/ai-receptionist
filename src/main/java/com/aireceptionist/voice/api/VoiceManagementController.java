@@ -1,6 +1,8 @@
 package com.aireceptionist.voice.api;
 
 import com.aireceptionist.api.VersionedRestController;
+import com.aireceptionist.billing.annotation.TierRequired;
+import com.aireceptionist.billing.domain.SubscriptionTier;
 import com.aireceptionist.common.ai.TenantOwnerPhonePort;
 import com.aireceptionist.common.api.ApiResponse;
 import com.aireceptionist.common.exception.AuthorizationException;
@@ -32,6 +34,9 @@ public class VoiceManagementController extends VersionedRestController {
         this.tenantOwnerPhonePort = tenantOwnerPhonePort;
     }
 
+    // Story 7.1 (AC2): voice is a PRO+ feature; tier read from the JWT. The Exotel webhooks stay
+    // open (Exotel can't send a JWT) and gate on tenants.tier instead (VoiceWebhookController).
+    @TierRequired(SubscriptionTier.PRO)
     @PostMapping("/calls/{callSid}/transfer")
     public ApiResponse<Map<String, String>> transfer(@PathVariable String callSid, Authentication authentication) {
         if (!(authentication instanceof TenantAwareAuthentication tenantAuth) || tenantAuth.getTenantId() == null) {

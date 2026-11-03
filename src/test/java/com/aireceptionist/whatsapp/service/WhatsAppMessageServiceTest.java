@@ -54,12 +54,13 @@ class WhatsAppMessageServiceTest {
     @Mock GetTenantStatusUseCase getTenantStatusUseCase;
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock StringRedisTemplate redisTemplate;
+    @Mock com.aireceptionist.common.billing.ConversationUsagePort conversationUsagePort;
 
     private WhatsAppMessageService newService() {
         return new WhatsAppMessageService(messageRepository, languageDetectionService, llmService,
                 conversationContextService, notificationService, tenantNamePort, tenantOwnerPhonePort,
                 frustrationDetectionService, intentDetectionService, getTenantStatusUseCase,
-                eventPublisher, redisTemplate);
+                eventPublisher, redisTemplate, conversationUsagePort);
     }
 
     @Test
@@ -91,6 +92,22 @@ class WhatsAppMessageServiceTest {
 
         verify(notificationService).sendMessage(tenantId.toString(), "+919876500001", UNAVAILABLE_MESSAGE);
         verify(llmService, never()).generateResponse(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void monthlyLimitReachedGetsLimitReplyWithoutAiOrMetering() {
+        UUID tenantId = UUID.randomUUID();
+        when(getTenantStatusUseCase.getStatus(tenantId)).thenReturn(Optional.of("LIVE"));
+        when(conversationUsagePort.isLimitReached(tenantId.toString())).thenReturn(true);
+
+        newService().onInboundMessage(new InboundWhatsAppMessageEvent(
+                tenantId, UUID.randomUUID().toString(), "+919876500009", "What is the price?", "PHONE_1", Instant.now()));
+
+        verify(notificationService).sendMessage(org.mockito.ArgumentMatchers.eq(tenantId.toString()),
+                org.mockito.ArgumentMatchers.eq("+919876500009"),
+                org.mockito.ArgumentMatchers.contains("service limit reached"));
+        verify(llmService, never()).generateResponse(any(), any(), any(), any(), any());
+        verify(conversationUsagePort, never()).recordConversation(any());
     }
 
     @Test

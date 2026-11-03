@@ -159,6 +159,31 @@ public class BusinessTenant {
         this.updatedAt = Instant.now();
     }
 
+    /** Story 7.1 (AC4): tier follows the paid subscription (Razorpay webhook). */
+    public void changeTier(String newTier) {
+        this.tier = newTier;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Story 7.4 (AC1): billing suspension after the 3-day grace period. Distinct from the admin
+     * {@link #suspend()} so a payment restoration can never undo an admin suspension.
+     */
+    public void suspendForPayment() {
+        this.status = TenantStatus.PAYMENT_SUSPENDED;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Story 7.4 (AC3): payment received — only lifts a payment suspension. Returns true if it did. */
+    public boolean restoreFromPaymentSuspension() {
+        if (this.status != TenantStatus.PAYMENT_SUSPENDED) {
+            return false;
+        }
+        this.status = TenantStatus.LIVE;
+        this.updatedAt = Instant.now();
+        return true;
+    }
+
     /** Story 5.2 (AC3, NFR28): admin action — schedules data erasure after a 30-day retention window. */
     public void terminate() {
         Instant now = Instant.now();
