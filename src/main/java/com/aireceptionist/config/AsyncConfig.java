@@ -40,8 +40,6 @@ public class AsyncConfig {
             // here — the same pattern already used for MDC — makes sure it's set before the
             // decorated Runnable (and therefore the @Transactional advice inside it) ever runs.
             String tenantContext = TenantContext.getCurrentTenant();
-            org.slf4j.LoggerFactory.getLogger(AsyncConfig.class).error(
-                    "DEBUG_PROBE_DECORATE capturedTenant={} submittingThread={}", tenantContext, Thread.currentThread().getName());
             return () -> {
                 try {
                     if (mdcContext != null) {
@@ -50,8 +48,6 @@ public class AsyncConfig {
                     if (tenantContext != null) {
                         TenantContext.setCurrentTenant(tenantContext);
                     }
-                    org.slf4j.LoggerFactory.getLogger(AsyncConfig.class).error(
-                            "DEBUG_PROBE_RUN aboutToRun tenantNow={} thread={}", TenantContext.getCurrentTenant(), Thread.currentThread().getName());
                     runnable.run();
                 } finally {
                     MDC.clear();

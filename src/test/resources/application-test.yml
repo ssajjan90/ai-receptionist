@@ -1,0 +1,14 @@
+# W84: the full suite starts one Spring context per distinct test configuration (15+ today), and
+# Spring's test context cache keeps them all alive — each with its own Hikari pool (default 10).
+# Against the shared Testcontainers Postgres (default max_connections=100) that exhausted the
+# server mid-run ("remaining connection slots are reserved for roles with the SUPERUSER
+# attribute"), surfacing as CannotGetJdbcConnection / CannotCreateTransaction in whichever classes
+# happened to run late. Small, shrinkable pools per context fix the arithmetic; the container's
+# max_connections is raised too (AbstractIntegrationTest) and the context cache is capped
+# (src/test/resources/spring.properties).
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      idle-timeout: 30000

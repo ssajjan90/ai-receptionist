@@ -43,10 +43,14 @@ public abstract class AbstractIntegrationTest {
     // involvement for these two fields, is the pattern Testcontainers' own docs recommend for
     // singleton containers and removes that race entirely.
     @SuppressWarnings("resource")
+    // W84: max_connections raised from the default 100 — one shared server backs every cached
+    // test context's pool (see src/test/resources/application-test.yml). fsync=off is
+    // Testcontainers' own default command, kept since withCommand replaces it.
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withDatabaseName("aireceptionist_test")
             .withUsername("test")
-            .withPassword("test");
+            .withPassword("test")
+            .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=300");
 
     @SuppressWarnings("resource")
     static final GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine")

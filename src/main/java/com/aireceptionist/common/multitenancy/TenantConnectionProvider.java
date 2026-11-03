@@ -42,9 +42,6 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
     @Override
     public Connection getConnection(String tenantIdentifier) throws SQLException {
         Connection connection = getAnyConnection();
-        if (TenantIdentifierResolver.DEFAULT_TENANT.equals(tenantIdentifier)) {
-            log.error("DEBUG_PROBE3 DEFAULT resolved, thread={}", Thread.currentThread().getName(), new Exception("stack"));
-        }
         if (tenantIdentifier != null && !TenantIdentifierResolver.DEFAULT_TENANT.equals(tenantIdentifier)) {
             try (PreparedStatement stmt = connection.prepareStatement("SELECT set_config('app.current_tenant', ?, false)")) {
                 stmt.setString(1, tenantIdentifier);
