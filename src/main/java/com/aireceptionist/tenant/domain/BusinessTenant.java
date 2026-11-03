@@ -112,7 +112,16 @@ public class BusinessTenant {
         );
     }
 
+    /**
+     * OTP verified. Only promotes a tenant that is still PENDING_VERIFICATION — {@code verifyOtp}
+     * is also the login path, and unconditionally setting ACTIVE let any SUSPENDED,
+     * PAYMENT_SUSPENDED or TERMINATED owner lift their own suspension (and knocked LIVE tenants
+     * out of LIVE) just by logging in again (found during the Epic 7 code-review fixes).
+     */
     public void activate() {
+        if (this.status != null && this.status != TenantStatus.PENDING_VERIFICATION) {
+            return;
+        }
         this.status = TenantStatus.ACTIVE;
         this.updatedAt = Instant.now();
     }

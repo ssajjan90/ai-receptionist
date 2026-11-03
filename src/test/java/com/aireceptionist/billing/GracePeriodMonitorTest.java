@@ -77,7 +77,7 @@ class GracePeriodMonitorTest {
     }
 
     @Test
-    void thirtyDaysAfterSuspensionTheTenantIsErased() {
+    void thirtyDaysAfterSuspensionTheTenantIsMarkedForErasure() {
         Subscription s = Subscription.basic(tenantId, now);
         s.suspend(now.minus(Duration.ofDays(30)));
         when(subscriptionService.load(tenantId)).thenReturn(s);
@@ -85,12 +85,39 @@ class GracePeriodMonitorTest {
 
         job.run();
 
-        verify(lifecycle).eraseNow(tenantId);
-        verify(subscriptionService).audit(eq(tenantId), eq("PAYMENT_SUSPENSION_ERASED"), anyString());
+        verify(lifecycle).terminate(tenantId);
+        verify(lifecycle, never()).eraseNow(any());
+        verify(subscriptionService).audit(eq(tenantId), eq("PAYMENT_SUSPENSION_TERMINATED"), anyString());
     }
 
     @Test
-    void recentlySuspendedTenantIsNotErased() {
+    void failedTerminationWritesNoAudit() {
+        Subscription s = Subscription.basic(tenantId, now);
+        s.suspend(now.minus(Duration.ofDays(31)));
+        when(subscriptionService.load(tenantId)).thenReturn(s);
+        when(tenantBilling.getTenantIdsWithStatus("PAYMENT_SUSPENDED")).thenReturn(List.of(tenantId));
+        org.mockito.Mockito.doThrow(new IllegalStateException("db")).when(lifecycle).terminate(tenantId);
+
+        job.run();
+
+        verify(subscriptionService, never()).audit(any(), anyString(), anyString());
+    }
+
+    @Test
+    void suspendedRowWithoutSuspendedAtFallsBackToUpdatedAt() {
+        Subscription s = new Subscription(UUID.randomUUID(), tenantId, com.aireceptionist.billing.domain.SubscriptionTier.PRO,
+                com.aireceptionist.billing.domain.SubscriptionStatus.SUSPENDED, 0, null, null, null, null, null, null,
+                null, null, null, null, null, now.minus(Duration.ofDays(60)), now.minus(Duration.ofDays(40)));
+        when(subscriptionService.load(tenantId)).thenReturn(s);
+        when(tenantBilling.getTenantIdsWithStatus("PAYMENT_SUSPENDED")).thenReturn(List.of(tenantId));
+
+        job.run();
+
+        verify(lifecycle).terminate(tenantId);
+    }
+
+    @Test
+    void recentlySuspendedTenantIsNotTerminated() {
         Subscription s = Subscription.basic(tenantId, now);
         s.suspend(now.minus(Duration.ofDays(29)));
         when(subscriptionService.load(tenantId)).thenReturn(s);
@@ -98,6 +125,6 @@ class GracePeriodMonitorTest {
 
         job.run();
 
-        verify(lifecycle, never()).eraseNow(any());
+        verify(lifecycle, never()).terminate(any());
     }
 }

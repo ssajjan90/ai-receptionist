@@ -74,8 +74,14 @@ class TierEnforcementAspectTest {
     }
 
     @Test
-    void missingOrUnknownTierIsTreatedAsBasic() {
-        assertThatThrownBy(() -> proxied().useVoice()).isInstanceOf(AuthorizationException.class);
+    void nonTenantCallerGetsForbiddenNotUpgradeMessage() {
+        assertThatThrownBy(() -> proxied().useVoice())
+                .isInstanceOf(AuthorizationException.class)
+                .extracting("errorCode").isEqualTo("FORBIDDEN");
+    }
+
+    @Test
+    void unknownTierIsTreatedAsBasic() {
         loginAs("GOLD");
         assertThatThrownBy(() -> proxied().useVoice()).isInstanceOf(AuthorizationException.class);
     }

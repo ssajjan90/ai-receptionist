@@ -5,7 +5,6 @@ import com.aireceptionist.billing.dto.CheckoutRequest;
 import com.aireceptionist.billing.dto.CheckoutResponse;
 import com.aireceptionist.billing.dto.SubscriptionStatusResponse;
 import com.aireceptionist.billing.service.BillingPlans;
-import com.aireceptionist.billing.service.RazorpayGateway;
 import com.aireceptionist.billing.service.SubscriptionService;
 import com.aireceptionist.common.api.ApiResponse;
 import com.aireceptionist.common.exception.AuthorizationException;
@@ -28,12 +27,10 @@ import java.util.UUID;
 public class BillingController extends VersionedRestController {
 
     private final SubscriptionService subscriptionService;
-    private final RazorpayGateway razorpayGateway;
     private final BillingPlans plans;
 
-    public BillingController(SubscriptionService subscriptionService, RazorpayGateway razorpayGateway, BillingPlans plans) {
+    public BillingController(SubscriptionService subscriptionService, BillingPlans plans) {
         this.subscriptionService = subscriptionService;
-        this.razorpayGateway = razorpayGateway;
         this.plans = plans;
     }
 
@@ -51,9 +48,7 @@ public class BillingController extends VersionedRestController {
         if (plans.tierFor(request.planId()).isEmpty()) {
             throw new ValidationException("INVALID_PLAN", "Unknown subscription plan.");
         }
-        RazorpayGateway.CreatedSubscription created = razorpayGateway.createSubscription(request.planId(), tenantId);
-        subscriptionService.attachCheckout(tenantId, created.id(), request.planId());
-        return ApiResponse.ok(new CheckoutResponse(created.checkoutUrl()));
+        return ApiResponse.ok(new CheckoutResponse(subscriptionService.checkout(tenantId, request.planId())));
     }
 
     private void validateTenantOwnership(UUID tenantId, Authentication authentication) {

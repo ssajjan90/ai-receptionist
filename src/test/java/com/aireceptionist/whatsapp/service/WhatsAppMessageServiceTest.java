@@ -98,7 +98,7 @@ class WhatsAppMessageServiceTest {
     void monthlyLimitReachedGetsLimitReplyWithoutAiOrMetering() {
         UUID tenantId = UUID.randomUUID();
         when(getTenantStatusUseCase.getStatus(tenantId)).thenReturn(Optional.of("LIVE"));
-        when(conversationUsagePort.isLimitReached(tenantId.toString())).thenReturn(true);
+        when(conversationUsagePort.isLimitReached(tenantId.toString(), "+919876500009")).thenReturn(true);
 
         newService().onInboundMessage(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), "+919876500009", "What is the price?", "PHONE_1", Instant.now()));
@@ -107,7 +107,7 @@ class WhatsAppMessageServiceTest {
                 org.mockito.ArgumentMatchers.eq("+919876500009"),
                 org.mockito.ArgumentMatchers.contains("service limit reached"));
         verify(llmService, never()).generateResponse(any(), any(), any(), any(), any());
-        verify(conversationUsagePort, never()).recordConversation(any());
+        verify(conversationUsagePort, never()).recordConversation(any(), any());
     }
 
     @Test

@@ -33,7 +33,8 @@ class UsageAlertServiceTest {
     private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
     @SuppressWarnings("unchecked")
     private final ValueOperations<String, String> valueOps = mock(ValueOperations.class);
-    private final UsageAlertService service = new UsageAlertService(subscriptionService, redisTemplate);
+    private final java.time.Clock clock = java.time.Clock.fixed(Instant.parse("2026-11-04T06:00:00Z"), java.time.ZoneOffset.UTC);
+    private final UsageAlertService service = new UsageAlertService(subscriptionService, redisTemplate, clock);
 
     private final UUID tenantId = UUID.randomUUID();
     private final String tenant = tenantId.toString();
@@ -76,24 +77,35 @@ class UsageAlertServiceTest {
     }
 
     @Test
-    void recordConversationSeedsFromDbAndIncrementsAtomically() {
+    void recordConversationSeedsFromDbAndIncrementsOncePerCustomerPerDay() {
         Subscription s = Subscription.basic(tenantId, Instant.now());
         s.syncUsage(42, Instant.now());
         when(subscriptionService.load(tenantId)).thenReturn(s);
         when(valueOps.increment("tenant:" + tenant + ":conv:month")).thenReturn(43L);
+        // First reply to this customer today claims the day marker; later replies don't.
+        when(valueOps.setIfAbsent(org.mockito.ArgumentMatchers.contains(":conv:seen:20261104:"), eq("1"), any(Duration.class)))
+                .thenReturn(true).thenReturn(false);
 
-        service.recordConversation(tenant);
+        service.recordConversation(tenant, "+919811111111");
+        service.recordConversation(tenant, "+919811111111");
 
         verify(valueOps).setIfAbsent(eq("tenant:" + tenant + ":conv:month"), eq("42"), any(Duration.class));
-        verify(valueOps).increment("tenant:" + tenant + ":conv:month");
+        verify(valueOps, times(1)).increment("tenant:" + tenant + ":conv:month");
     }
 
     @Test
-    void limitCheckReadsFlagAndFailsOpenOnRedisError() {
+    void limitBlocksNewCustomersButNotOnesAlreadyServedToday() {
         when(redisTemplate.hasKey("tenant:" + tenant + ":conv:limit_reached")).thenReturn(true);
-        assertThat(service.isLimitReached(tenant)).isTrue();
+        when(redisTemplate.hasKey(org.mockito.ArgumentMatchers.contains(":conv:seen:"))).thenReturn(false);
+        assertThat(service.isLimitReached(tenant, "+919822222222")).isTrue();
 
+        when(redisTemplate.hasKey(org.mockito.ArgumentMatchers.contains(":conv:seen:"))).thenReturn(true);
+        assertThat(service.isLimitReached(tenant, "+919811111111")).isFalse();
+    }
+
+    @Test
+    void limitCheckFailsOpenOnRedisError() {
         when(redisTemplate.hasKey(anyString())).thenThrow(new RedisConnectionFailureException("down"));
-        assertThat(service.isLimitReached(tenant)).isFalse();
+        assertThat(service.isLimitReached(tenant, "+919811111111")).isFalse();
     }
 }

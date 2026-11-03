@@ -74,7 +74,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessRuleException.class)
     public org.springframework.http.ResponseEntity<ApiResponse<Void>> handleBusinessRule(BusinessRuleException ex) {
         HttpStatus status = ("EMAIL_ALREADY_REGISTERED".equals(ex.getErrorCode())
-                || "PHONE_ALREADY_REGISTERED".equals(ex.getErrorCode()))
+                || "PHONE_ALREADY_REGISTERED".equals(ex.getErrorCode())
+                || "SUBSCRIPTION_ALREADY_ACTIVE".equals(ex.getErrorCode())
+                || "CHECKOUT_IN_PROGRESS".equals(ex.getErrorCode()))
                 ? HttpStatus.CONFLICT
                 : HttpStatus.UNPROCESSABLE_ENTITY;
         return org.springframework.http.ResponseEntity

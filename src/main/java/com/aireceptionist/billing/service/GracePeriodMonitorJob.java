@@ -20,9 +20,10 @@ import java.util.UUID;
  * <ol>
  *   <li>PAST_DUE subscriptions of LIVE tenants: grace-start notice (once), 24h warning (once),
  *       suspension when the grace period has ended.</li>
- *   <li>PAYMENT_SUSPENDED tenants unpaid for 30 days are erased (NFR28) via the tenant module's
- *       {@code eraseNow}. Deviation: lives here rather than in admin's ScheduledDataRetentionJob,
- *       so the admin module doesn't take a dependency on billing's subscription state.</li>
+ *   <li>PAYMENT_SUSPENDED tenants unpaid for 30 days are <b>marked for erasure</b> (AC4, code-review
+ *       decision): moved to TERMINATED via the tenant module's {@code terminate}, after which the
+ *       existing retention job erases them once its 30-day window passes (NFR28). Lives here rather
+ *       than in admin's ScheduledDataRetentionJob so admin doesn't depend on billing state.</li>
  * </ol>
  */
 @Component
@@ -31,7 +32,7 @@ public class GracePeriodMonitorJob {
     private static final Logger log = LoggerFactory.getLogger(GracePeriodMonitorJob.class);
     static final Duration WARNING_WINDOW = Duration.ofHours(24);
     static final Duration SUSPENDED_RETENTION = Duration.ofDays(30);
-    public static final String AUDIT_PAYMENT_SUSPENSION_ERASED = "PAYMENT_SUSPENSION_ERASED";
+    public static final String AUDIT_PAYMENT_SUSPENSION_TERMINATED = "PAYMENT_SUSPENSION_TERMINATED";
 
     private final GetLiveTenantsUseCase liveTenants;
     private final TenantBillingUseCase tenantBilling;
@@ -88,11 +89,20 @@ public class GracePeriodMonitorJob {
 
     void eraseIfLongSuspended(UUID tenantId, Instant now) {
         Subscription s = subscriptionService.load(tenantId);
-        if (s.getStatus() == SubscriptionStatus.SUSPENDED && s.getSuspendedAt() != null
-                && !s.getSuspendedAt().plus(SUSPENDED_RETENTION).isAfter(now)) {
-            subscriptionService.audit(tenantId, AUDIT_PAYMENT_SUSPENSION_ERASED, "unpaid 30 days after suspension");
-            tenantLifecycle.eraseNow(tenantId);
-            log.warn("Erased tenant {} — unpaid 30 days after payment suspension", tenantId);
+        if (s.getStatus() != SubscriptionStatus.SUSPENDED) {
+            return;
+        }
+        Instant suspendedAt = s.getSuspendedAt();
+        if (suspendedAt == null) {
+            // Code review: never silently skip — fall back to the row's last update.
+            suspendedAt = s.getUpdatedAt();
+            log.warn("Subscription for tenant {} is SUSPENDED without suspended_at; using updated_at {}", tenantId, suspendedAt);
+        }
+        if (suspendedAt != null && !suspendedAt.plus(SUSPENDED_RETENTION).isAfter(now)) {
+            tenantLifecycle.terminate(tenantId);
+            // Audited only once the transition actually happened.
+            subscriptionService.audit(tenantId, AUDIT_PAYMENT_SUSPENSION_TERMINATED, "unpaid 30 days after suspension");
+            log.warn("Tenant {} marked for erasure — unpaid 30 days after payment suspension", tenantId);
         }
     }
 }

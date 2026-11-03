@@ -43,6 +43,15 @@ app:
       provider: ${VOICE_TTS_PROVIDER:google}
     # No default: the app refuses to start without a public URL for Exotel callbacks/audio.
     public-base-url: ${VOICE_PUBLIC_BASE_URL}
+  # Epic 7 code review: no fallbacks in prod — a missing secret must stop startup, not silently
+  # accept webhooks signed with the public test default.
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID}
+    key-secret: ${RAZORPAY_KEY_SECRET}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+    plans:
+      basic: ${RAZORPAY_PLAN_BASIC}
+      pro: ${RAZORPAY_PLAN_PRO}
   ocr:
     provider: google
 

@@ -57,8 +57,7 @@ class PaymentRestorationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/webhooks/billing")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body)
-                        .header("X-Razorpay-Signature", RazorpayWebhookServiceTest.sign(body, webhookSecret))
-                        .header("X-Razorpay-Event-Id", "evt_" + UUID.randomUUID()))
+                        .header("X-Razorpay-Signature", RazorpayWebhookServiceTest.sign(body, webhookSecret)))
                 .andExpect(status().isOk());
 
         assertThat(tenantStatus.getStatus(tenantId)).contains("LIVE");
@@ -79,11 +78,13 @@ class PaymentRestorationTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/webhooks/billing")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body)
-                        .header("X-Razorpay-Signature", RazorpayWebhookServiceTest.sign(body, webhookSecret))
-                        .header("X-Razorpay-Event-Id", "evt_" + UUID.randomUUID()))
+                        .header("X-Razorpay-Signature", RazorpayWebhookServiceTest.sign(body, webhookSecret)))
                 .andExpect(status().isOk());
 
         assertThat(tenantStatus.getStatus(tenantId)).contains("SUSPENDED");
         assertThat(repository.findByTenantId(tenantId).orElseThrow().getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+        // Owner is told the payment arrived, not that service is back (code review).
+        assertThat(BillingTestSupport.auditCount(jdbcTemplate, tenantId, "PAYMENT_RECEIVED")).isEqualTo(1);
+        assertThat(BillingTestSupport.auditCount(jdbcTemplate, tenantId, "PAYMENT_RESTORED")).isZero();
     }
 }

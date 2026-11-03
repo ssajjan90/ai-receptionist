@@ -185,7 +185,7 @@ public class WhatsAppMessageService {
             messageRepository.save(inbound);
 
             // Story 7.3 (AC2): monthly allowance used up — fixed reply, no AI processing.
-            if (conversationUsagePort.isLimitReached(tenantId)) {
+            if (conversationUsagePort.isLimitReached(tenantId, senderPhone)) {
                 log.info("Conversation limit reached for tenant={}, sending limit reply", tenantId);
                 WhatsAppMessage limitReply = WhatsAppMessage.outboundAi(
                         event.getTenantIdValue(), senderPhone, SERVICE_LIMIT_REACHED_MESSAGE, 1.0, "en");
@@ -248,13 +248,14 @@ public class WhatsAppMessageService {
             try {
                 notificationService.sendMessage(tenantId, senderPhone, finalResponse);
                 outbound.markSent();
+                // Story 7.3 (AC3): metered only once a reply was actually delivered; one conversation
+                // = one customer per day (code-review decision).
+                conversationUsagePort.recordConversation(tenantId, senderPhone);
             } catch (Exception ex) {
                 log.warn("Failed to deliver WhatsApp message for tenant={}: {}", tenantId, ex.getMessage());
                 outbound.markFailed();
             }
             messageRepository.save(outbound);
-            // Story 7.3 (AC3): one AI conversation metered per AI response sent.
-            conversationUsagePort.recordConversation(tenantId);
         } finally {
             TenantContext.clear();
             MDC.remove("tenantId");

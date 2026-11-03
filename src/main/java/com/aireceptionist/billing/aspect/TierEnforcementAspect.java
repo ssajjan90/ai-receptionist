@@ -25,9 +25,11 @@ public class TierEnforcementAspect {
     @Around("@annotation(tierRequired)")
     public Object enforce(ProceedingJoinPoint joinPoint, TierRequired tierRequired) throws Throwable {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        SubscriptionTier current = authentication instanceof TenantAwareAuthentication tenantAuth
-                ? SubscriptionTier.parseOrBasic(tenantAuth.getTier())
-                : SubscriptionTier.BASIC;
+        if (!(authentication instanceof TenantAwareAuthentication tenantAuth)) {
+            // Code review: not a tenant (e.g. admin) — a tier upgrade wouldn't help.
+            throw new AuthorizationException("FORBIDDEN", "A tenant account is required for this feature.");
+        }
+        SubscriptionTier current = SubscriptionTier.parseOrBasic(tenantAuth.getTier());
         if (!current.atLeast(tierRequired.value())) {
             throw new AuthorizationException(TIER_UPGRADE_REQUIRED,
                     "This feature requires the " + tierRequired.value() + " plan. Please upgrade your subscription.");

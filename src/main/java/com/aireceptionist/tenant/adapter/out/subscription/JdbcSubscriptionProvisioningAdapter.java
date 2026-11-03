@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.sql.Statement;
 import java.util.UUID;
 
+/** Epic 7 code review: BASIC rows must carry the 300/month limit (PRD) — NULL means unlimited. */
 @Component
 public class JdbcSubscriptionProvisioningAdapter implements SubscriptionProvisioningPort {
 
@@ -25,8 +26,8 @@ public class JdbcSubscriptionProvisioningAdapter implements SubscriptionProvisio
                     tenantStatement.execute("SELECT set_config('app.current_tenant', '" + tenantId + "', false)");
                 }
                 try (var statement = connection.prepareStatement("""
-                        INSERT INTO subscriptions (id, tenant_id, tier, status, created_at)
-                        VALUES (gen_random_uuid(), ?, 'BASIC', 'ACTIVE', NOW())
+                        INSERT INTO subscriptions (id, tenant_id, tier, status, conversation_limit, created_at)
+                        VALUES (gen_random_uuid(), ?, 'BASIC', 'ACTIVE', 300, NOW())
                         """)) {
                     statement.setObject(1, tenantId);
                     statement.executeUpdate();

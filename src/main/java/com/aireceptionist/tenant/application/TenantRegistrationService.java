@@ -96,7 +96,7 @@ public class TenantRegistrationService implements RegisterTenantUseCase, VerifyT
                 generateJwt(savedTenant),
                 savedTenant.getId(),
                 OWNER_ROLE,
-                BASIC_TIER
+                tierOf(savedTenant)
         );
     }
 
@@ -109,13 +109,18 @@ public class TenantRegistrationService implements RegisterTenantUseCase, VerifyT
         ownerNotificationPort.sendOtp(tenant.getOwnerPhone(), otp);
     }
 
+    /** Story 7.1 (AC3/AC4, code review): the JWT carries the tenant's real tier, not a hard-coded BASIC. */
+    private static String tierOf(BusinessTenant tenant) {
+        return tenant.getTier() == null || tenant.getTier().isBlank() ? BASIC_TIER : tenant.getTier();
+    }
+
     private String generateJwt(BusinessTenant tenant) {
         try {
             return tokenIssuerPort.issueToken(
                     tenant.getId().toString(),
                     tenant.getId().toString(),
                     OWNER_ROLE,
-                    BASIC_TIER
+                    tierOf(tenant)
             );
         } catch (RuntimeException ex) {
             throw new IllegalStateException("Unable to generate tenant JWT", ex);

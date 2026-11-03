@@ -1,6 +1,8 @@
 package com.aireceptionist.billing.service;
 
 import com.aireceptionist.billing.domain.Subscription;
+import com.aireceptionist.billing.repository.SubscriptionRepository;
+import com.aireceptionist.tenant.port.in.GetTenantStatusUseCase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -17,19 +19,23 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * Story 7.2 (AC2-AC6) / 7.4 (AC3).
+ * Story 7.2 (AC2-AC6) / 7.4 (AC3), with code-review fixes.
  * <ul>
- *   <li>Signature: hex(HMAC-SHA256(webhookSecret, rawBody)) vs {@code X-Razorpay-Signature},
- *       constant-time compare — Razorpay's documented scheme.</li>
- *   <li>Idempotency: event id from Razorpay's {@code X-Razorpay-Event-Id} header (falls back to a
- *       body hash). Claimed with SETNX before processing so concurrent retries can't both run;
- *       released on failure so a replay can retry. Kept 7 days, not the Dev Notes' 5 minutes —
- *       Razorpay retries for up to 24h, so a 5-minute marker would let a late retry re-apply (AC6).</li>
- *   <li>Tenant: {@code payload.subscription.entity.notes.tenant_id} (set at checkout), cross-checked
- *       against the stored Razorpay subscription id.</li>
+ *   <li>Signature: hex(HMAC-SHA256(webhookSecret, rawBody)) vs {@code X-Razorpay-Signature}, constant-time.</li>
+ *   <li>Idempotency on the SHA-256 of the <em>signed</em> body (the unsigned event-id header can be
+ *       swapped to replay a captured body). Claimed with SETNX before processing; kept 7 days
+ *       (Razorpay retries for up to 24h); released on failure and reported as {@link Result#FAILED}
+ *       so the controller answers 5xx and Razorpay retries.</li>
+ *   <li>Ordering: the event's {@code created_at} must be ≥ the last applied event's, else ignored
+ *       (a delayed {@code halted} can't undo a newer {@code charged}).</li>
+ *   <li>Tenant: {@code notes.tenant_id} (set at checkout), cross-checked against the live or pending
+ *       Razorpay subscription id; events for ERASED/TERMINATED/unknown tenants are ignored.</li>
+ *   <li>{@code subscription.cancelled} downgrades to BASIC (code-review decision);
+ *       {@code subscription.halted} starts the grace period.</li>
  * </ul>
  */
 @Service
@@ -38,33 +44,39 @@ public class RazorpayWebhookService {
     private static final Logger log = LoggerFactory.getLogger(RazorpayWebhookService.class);
     static final Duration PROCESSED_TTL = Duration.ofDays(7);
     private static final Duration IN_FLIGHT_TTL = Duration.ofMinutes(5);
+    private static final Set<String> IGNORED_TENANT_STATUSES = Set.of("ERASED", "TERMINATED");
 
-    public enum Result { PROCESSED, DUPLICATE, INVALID_SIGNATURE, IGNORED }
+    public enum Result { PROCESSED, DUPLICATE, INVALID_SIGNATURE, IGNORED, FAILED }
 
     private final String webhookSecret;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
     private final SubscriptionService subscriptionService;
+    private final SubscriptionRepository repository;
+    private final GetTenantStatusUseCase tenantStatus;
 
     public RazorpayWebhookService(@Value("${app.razorpay.webhook-secret}") String webhookSecret,
                                   ObjectMapper objectMapper,
                                   StringRedisTemplate redisTemplate,
-                                  SubscriptionService subscriptionService) {
+                                  SubscriptionService subscriptionService,
+                                  SubscriptionRepository repository,
+                                  GetTenantStatusUseCase tenantStatus) {
         this.webhookSecret = webhookSecret;
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
         this.subscriptionService = subscriptionService;
+        this.repository = repository;
+        this.tenantStatus = tenantStatus;
     }
 
-    public Result processWebhook(byte[] rawBody, String signature, String eventIdHeader) {
+    public Result processWebhook(byte[] rawBody, String signature) {
         if (!verifySignature(rawBody, signature)) {
             log.warn("Razorpay webhook signature verification failed");
             return Result.INVALID_SIGNATURE;
         }
-        String eventId = eventIdHeader != null && !eventIdHeader.isBlank() ? eventIdHeader : "body-" + sha256(rawBody);
-        String key = BillingRedisKeys.razorpayEvent(eventId);
+        String key = BillingRedisKeys.razorpayEvent(sha256(rawBody));
         if (!Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(key, "processing", IN_FLIGHT_TTL))) {
-            log.info("Duplicate Razorpay event {} ignored", eventId);
+            log.info("Duplicate Razorpay event ignored");
             return Result.DUPLICATE;
         }
         try {
@@ -72,48 +84,71 @@ public class RazorpayWebhookService {
             redisTemplate.opsForValue().set(key, "processed", PROCESSED_TTL);
             return result;
         } catch (Exception ex) {
-            redisTemplate.delete(key);
-            log.error("Failed to process Razorpay event {}: {}", eventId, ex.getMessage(), ex);
-            return Result.IGNORED;
+            try {
+                redisTemplate.delete(key);
+            } catch (Exception ignored) {
+                // the in-flight marker expires on its own
+            }
+            log.error("Failed to process Razorpay event — Razorpay will retry: {}", ex.getMessage(), ex);
+            return Result.FAILED;
         }
     }
 
     private Result dispatch(JsonNode event) {
         String type = event.path("event").asText("");
+        if (!Set.of("subscription.charged", "subscription.halted", "subscription.cancelled").contains(type)) {
+            log.debug("Ignoring Razorpay event type {}", type);
+            return Result.IGNORED;
+        }
         JsonNode sub = event.path("payload").path("subscription").path("entity");
         String razorpaySubscriptionId = sub.path("id").asText(null);
-        return switch (type) {
-            case "subscription.charged" -> {
-                Optional<UUID> tenant = resolveTenant(sub, razorpaySubscriptionId);
-                if (tenant.isEmpty()) {
-                    yield Result.IGNORED;
+        Optional<Resolved> resolved = resolveTenant(sub, razorpaySubscriptionId);
+        if (resolved.isEmpty()) {
+            return Result.IGNORED;
+        }
+        UUID tenantId = resolved.get().tenantId();
+        boolean isPending = resolved.get().pending();
+
+        // The ordering guard is an UPDATE — the row must exist, or the very first event for a
+        // pre-Epic-7 tenant would look "out of order" and be dropped.
+        repository.ensureExists(tenantId, Instant.now());
+        if (event.hasNonNull("created_at")
+                && !repository.advanceLastEvent(tenantId, Instant.ofEpochSecond(event.path("created_at").asLong()))) {
+            log.info("Ignoring out-of-order Razorpay {} for tenant={} (a newer event was already applied)", type, tenantId);
+            return Result.IGNORED;
+        }
+
+        switch (type) {
+            case "subscription.charged" -> handleSubscriptionCharged(tenantId, razorpaySubscriptionId,
+                    sub.path("plan_id").asText(null),
+                    sub.hasNonNull("current_end") ? Instant.ofEpochSecond(sub.path("current_end").asLong()) : null);
+            case "subscription.halted" -> {
+                if (isPending) {
+                    return Result.IGNORED; // a never-paid checkout can't fail a payment
                 }
-                handleSubscriptionCharged(tenant.get(), sub.path("plan_id").asText(null),
-                        sub.hasNonNull("current_end") ? Instant.ofEpochSecond(sub.path("current_end").asLong()) : null);
-                yield Result.PROCESSED;
+                subscriptionService.handlePaymentFailure(tenantId);
             }
-            case "subscription.cancelled", "subscription.halted" -> {
-                Optional<UUID> tenant = resolveTenant(sub, razorpaySubscriptionId);
-                if (tenant.isEmpty()) {
-                    yield Result.IGNORED;
+            default -> { // subscription.cancelled
+                if (isPending) {
+                    repository.clearPending(tenantId, razorpaySubscriptionId, Instant.now());
+                } else {
+                    subscriptionService.handleCancellation(tenantId);
                 }
-                subscriptionService.handlePaymentFailure(tenant.get());
-                yield Result.PROCESSED;
             }
-            default -> {
-                log.debug("Ignoring Razorpay event type {}", type);
-                yield Result.IGNORED;
-            }
-        };
+        }
+        return Result.PROCESSED;
     }
 
-    /** Story 7.4 Task 4: restore access first, then apply the (possibly new) tier. */
-    void handleSubscriptionCharged(UUID tenantId, String planId, Instant currentEnd) {
+    /** Story 7.4 Task 4: restore access first, then apply the (possibly new) plan. */
+    void handleSubscriptionCharged(UUID tenantId, String razorpaySubscriptionId, String planId, Instant currentEnd) {
         subscriptionService.restoreTenant(tenantId);
-        subscriptionService.handlePaymentSuccess(tenantId, planId, currentEnd);
+        subscriptionService.handlePaymentSuccess(tenantId, razorpaySubscriptionId, planId, currentEnd);
     }
 
-    private Optional<UUID> resolveTenant(JsonNode sub, String razorpaySubscriptionId) {
+    private record Resolved(UUID tenantId, boolean pending) {
+    }
+
+    private Optional<Resolved> resolveTenant(JsonNode sub, String razorpaySubscriptionId) {
         String tenantIdText = sub.path("notes").path("tenant_id").asText(null);
         UUID tenantId;
         try {
@@ -122,14 +157,22 @@ public class RazorpayWebhookService {
             log.warn("Razorpay subscription {} has no valid notes.tenant_id", razorpaySubscriptionId);
             return Optional.empty();
         }
+        Optional<String> status = tenantStatus.getStatus(tenantId);
+        if (status.isEmpty() || IGNORED_TENANT_STATUSES.contains(status.get())) {
+            log.warn("Ignoring Razorpay event for tenant {} in status {}", tenantId, status.orElse("<none>"));
+            return Optional.empty();
+        }
         Subscription stored = subscriptionService.load(tenantId);
+        if (razorpaySubscriptionId != null && razorpaySubscriptionId.equals(stored.getPendingRazorpaySubscriptionId())) {
+            return Optional.of(new Resolved(tenantId, true));
+        }
         if (stored.getRazorpaySubscriptionId() != null && razorpaySubscriptionId != null
                 && !stored.getRazorpaySubscriptionId().equals(razorpaySubscriptionId)) {
             log.warn("Razorpay subscription {} does not match tenant {}'s subscription {} — ignored",
                     razorpaySubscriptionId, tenantId, stored.getRazorpaySubscriptionId());
             return Optional.empty();
         }
-        return Optional.of(tenantId);
+        return Optional.of(new Resolved(tenantId, false));
     }
 
     boolean verifySignature(byte[] rawBody, String signature) {
