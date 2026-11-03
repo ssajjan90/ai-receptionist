@@ -28,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.contains;
 
 class OwnerCommandParserTest {
 
@@ -41,6 +42,7 @@ class OwnerCommandParserTest {
     private ValueOperations<String, String> valueOps;
     private ApplicationEventPublisher eventPublisher;
     private OwnerCommandParser parser;
+    private com.aireceptionist.common.voice.VoiceTransferPort voiceTransferPort;
 
     @BeforeEach
     void setUp() {
@@ -53,8 +55,36 @@ class OwnerCommandParserTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.get(anyString())).thenReturn(null); // no pending command by default
 
+        voiceTransferPort = mock(com.aireceptionist.common.voice.VoiceTransferPort.class);
         parser = new OwnerCommandParser(notificationService, knowledgeBaseService,
-                conflictDetectionService, redisTemplate, new ObjectMapper(), eventPublisher);
+                conflictDetectionService, redisTemplate, new ObjectMapper(), eventPublisher,
+                voiceTransferPort);
+    }
+
+    @Test
+    void transferReplyBridgesWaitingVoiceCallAndConfirms() {
+        when(voiceTransferPort.transferWaitingCall(TENANT_ID, OWNER_PHONE))
+                .thenReturn(com.aireceptionist.common.voice.VoiceTransferPort.Outcome.TRANSFERRED);
+        // Training mode is active too — TRANSFER must still win (caller is on a 60s hold).
+        when(valueOps.get(anyString())).thenReturn("{\"question\":\"q\",\"auditLogId\":\"\"}");
+
+        parser.onOwnerCommand(event("transfer"));
+
+        verify(voiceTransferPort).transferWaitingCall(TENANT_ID, OWNER_PHONE);
+        ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).sendMessage(eq(TENANT_ID), eq(OWNER_PHONE), msg.capture());
+        assertThat(msg.getValue()).contains("Connecting the caller");
+        verify(knowledgeBaseService, never()).addFaqFromOwnerTraining(any(), anyString(), anyString());
+    }
+
+    @Test
+    void transferReplyWithNoWaitingCallSaysSo() {
+        when(voiceTransferPort.transferWaitingCall(TENANT_ID, OWNER_PHONE))
+                .thenReturn(com.aireceptionist.common.voice.VoiceTransferPort.Outcome.NO_CALL_WAITING);
+
+        parser.onOwnerCommand(event("TRANSFER"));
+
+        verify(notificationService).sendMessage(eq(TENANT_ID), eq(OWNER_PHONE), contains("No caller is waiting"));
     }
 
     @Test

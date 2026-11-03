@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Story 6.3 (AC3): owner-triggered live transfer. JWT required (falls under
+ * Story 6.3 (AC3): owner-triggered live transfer (API path; owners on WhatsApp reply TRANSFER
+ * instead — see {@code common.voice.VoiceTransferPort}). JWT with role OWNER required (falls under
  * {@code anyRequest().authenticated()}); {@code JwtAuthenticationFilter} sets the tenant, so RLS
  * makes another tenant's call SID a 404.
  */
@@ -35,6 +36,10 @@ public class VoiceManagementController extends VersionedRestController {
     public ApiResponse<Map<String, String>> transfer(@PathVariable String callSid, Authentication authentication) {
         if (!(authentication instanceof TenantAwareAuthentication tenantAuth) || tenantAuth.getTenantId() == null) {
             throw new AuthorizationException("FORBIDDEN", "Authenticated tenant context is required.");
+        }
+        // Code review: only the business owner may bridge live customer calls.
+        if (!"OWNER".equals(tenantAuth.getRole())) {
+            throw new AuthorizationException("FORBIDDEN", "Only the business owner can transfer calls.");
         }
         String ownerPhone = tenantOwnerPhonePort.getOwnerPhone(tenantAuth.getTenantId()).orElse(null);
         exotelCallService.transferCall(callSid, ownerPhone);

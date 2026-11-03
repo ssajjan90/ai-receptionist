@@ -68,13 +68,16 @@ app:
     api-url: ${EXOTEL_API_URL:https://api.exotel.com}
   voice:
     # Public HTTPS base URL Exotel uses to fetch synthesized audio (<Play>) and call back webhooks.
-    public-base-url: ${VOICE_PUBLIC_BASE_URL:http://localhost:8080}
+    # Blank = relative callback URLs (local dev/tests). Required (https) when tts.provider=google.
+    public-base-url: ${VOICE_PUBLIC_BASE_URL:}
     tts:
       # say   = Exotel's built-in <Say> TTS (no external API; default, used for local dev/tests)
       # google = Google Cloud TTS audio served back to Exotel via <Play>
       provider: ${VOICE_TTS_PROVIDER:say}
       greeting-ttl-days: ${VOICE_GREETING_TTL_DAYS:30}
       response-ttl-minutes: ${VOICE_RESPONSE_AUDIO_TTL_MINUTES:10}
+      # Hard deadline for one Google TTS call; on timeout the caller hears Exotel <Say> instead.
+      timeout-ms: ${VOICE_TTS_TIMEOUT_MS:2500}
   ocr:
     provider: ${OCR_PROVIDER:google}
   export:

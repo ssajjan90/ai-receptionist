@@ -148,7 +148,7 @@ class VoiceCallProcessingTest extends AbstractIntegrationTest {
         assertThat(call.getCallerPhone()).isEqualTo(caller);
         assertThat(call.getAiResponseCount()).isEqualTo(1);
         assertThat(call.getTranscript())
-                .isEqualTo("Caller: " + query + "\nAI: The Samsung S24 costs 74999 rupees.\n");
+                .isEqualTo("Caller: " + query + "\nAI (0.92): The Samsung S24 costs 74999 rupees.\n");
         assertThat(call.getLastConfidence()).isEqualByComparingTo(new BigDecimal("0.92"));
         assertThat(call.getStatus()).isEqualTo(VoiceCallStatus.HANDLED);
         assertThat(call.getDurationSeconds()).isNotNull().isGreaterThanOrEqualTo(0);
@@ -229,6 +229,71 @@ class VoiceCallProcessingTest extends AbstractIntegrationTest {
                 .andExpect(content().string(containsString("<Hangup/>")));
 
         assertThat(LLM_USER_MESSAGES).isEmpty();
+    }
+
+    @Test
+    void suspendedTenantGetsUnavailableWithoutAi() throws Exception {
+        jdbcTemplate.update("UPDATE tenants SET status = 'SUSPENDED' WHERE id = ?", tenantId);
+        String callSid = "CA-" + UUID.randomUUID();
+
+        postTranscript(callSid, uniqueQuery("What is the price?"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("unable to process")))
+                .andExpect(content().string(containsString("<Hangup/>")));
+
+        assertThat(LLM_USER_MESSAGES).isEmpty();
+    }
+
+    @Test
+    void missingParamsAnswerWithExoMlNotJsonError() throws Exception {
+        mockMvc.perform(post("/webhooks/voice/transcript")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("TranscriptionText", "hello")
+                        .header("X-Exotel-Signature", sign("", "", "", "hello")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("<Response>")))
+                .andExpect(content().string(containsString("unable to process")));
+    }
+
+    @Test
+    void basicTierHearsWhatsAppRedirectWithoutPlaceholderNumber() throws Exception {
+        jdbcTemplate.update("UPDATE tenants SET tier = 'BASIC' WHERE id = ?", tenantId);
+
+        postTranscript("CA-" + UUID.randomUUID(), "hello")
+                .andExpect(content().string(containsString("message us on WhatsApp")))
+                .andExpect(content().string(not(containsString("XXXX"))));
+    }
+
+    @Test
+    void statusCallbackFinalisesEndTimeAndDuration() throws Exception {
+        String callSid = "CA-" + UUID.randomUUID();
+        postTranscript(callSid, uniqueQuery("Do you have iPhones?")).andExpect(status().isOk());
+
+        mockMvc.perform(post("/webhooks/voice/status")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("CallSid", callSid).param("From", caller).param("To", businessPhone)
+                        .param("Status", "completed")
+                        .header("X-Exotel-Signature", sign(callSid, caller, businessPhone, "completed")))
+                .andExpect(status().isOk());
+
+        VoiceCall call = loadCall(callSid);
+        assertThat(call.getEndedAt()).isNotNull();
+        assertThat(call.getDurationSeconds()).isNotNull();
+        assertThat(call.getStatus()).isEqualTo(VoiceCallStatus.HANDLED);
+    }
+
+    @Test
+    void nationalFormatCallerIsNormalised() throws Exception {
+        String callSid = "CA-" + UUID.randomUUID();
+        String text = uniqueQuery("Do you have iPhones?");
+        mockMvc.perform(post("/webhooks/voice/transcript")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("CallSid", callSid).param("From", "09812345678").param("To", businessPhone)
+                        .param("TranscriptionText", text)
+                        .header("X-Exotel-Signature", sign(callSid, "09812345678", businessPhone, text)))
+                .andExpect(status().isOk());
+
+        assertThat(loadCall(callSid).getCallerPhone()).isEqualTo("+919812345678");
     }
 
     @Test

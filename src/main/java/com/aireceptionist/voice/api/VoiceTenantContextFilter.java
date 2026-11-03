@@ -36,9 +36,16 @@ class VoiceTenantContextFilter extends OncePerRequestFilter {
         this.resolveTenantByBusinessPhoneUseCase = resolveTenantByBusinessPhoneUseCase;
     }
 
+    // Code review: exact paths, not a "/webhooks/voice" prefix that would also catch any future
+    // "/webhooks/voicemail"-style endpoint.
+    static final java.util.Set<String> VOICE_WEBHOOK_PATHS = java.util.Set.of(
+            "/webhooks/voice", "/webhooks/voice/transcript", "/webhooks/voice/transfer-timeout",
+            "/webhooks/voice/status");
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod()) || !request.getRequestURI().startsWith("/webhooks/voice");
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        return !"POST".equals(request.getMethod()) || !VOICE_WEBHOOK_PATHS.contains(path);
     }
 
     @Override

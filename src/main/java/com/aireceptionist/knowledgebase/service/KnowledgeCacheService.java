@@ -48,6 +48,14 @@ public class KnowledgeCacheService implements MessageListener {
     }
 
     private void evictQueryCache(String tenantId) {
+        // Code review: tenantId goes into a Redis SCAN glob — a '*' or '?' (e.g. a malformed
+        // channel name) would evict every tenant's caches. Only ever accept a UUID.
+        try {
+            java.util.UUID.fromString(tenantId);
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            log.warn("Ignoring KB cache eviction for invalid tenant id '{}'", tenantId);
+            return;
+        }
         for (String patternTemplate : QUERY_CACHE_PATTERNS) {
             evictMatching(String.format(patternTemplate, tenantId), tenantId);
         }

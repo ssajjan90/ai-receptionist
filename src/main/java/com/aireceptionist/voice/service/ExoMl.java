@@ -9,9 +9,6 @@ package com.aireceptionist.voice.service;
  */
 public final class ExoMl {
 
-    public static final String TRANSCRIPT_ACTION = "/webhooks/voice/transcript";
-    public static final String TRANSFER_TIMEOUT_ACTION = "/webhooks/voice/transfer-timeout";
-
     private ExoMl() {
     }
 
@@ -32,9 +29,12 @@ public final class ExoMl {
         return "<Play>" + escape(audioUrl) + "</Play>";
     }
 
-    /** Records the caller's next utterance and asks Exotel to transcribe it to the transcript webhook. */
-    public static String recordForTranscript() {
-        return "<Record action=\"" + TRANSCRIPT_ACTION + "\" maxLength=\"30\" transcribe=\"true\"/>";
+    /**
+     * Records the caller's next utterance and asks Exotel to transcribe it to {@code actionUrl}
+     * (see {@link VoiceCallbackUrls#transcript()}).
+     */
+    public static String recordForTranscript(String actionUrl) {
+        return "<Record action=\"" + escapeAttribute(actionUrl) + "\" maxLength=\"30\" transcribe=\"true\"/>";
     }
 
     public static String pause(int seconds) {
@@ -47,6 +47,10 @@ public final class ExoMl {
 
     public static String hangup() {
         return "<Hangup/>";
+    }
+
+    private static String escapeAttribute(String value) {
+        return escape(value).replace("\"", "&quot;");
     }
 
     static String exotelLanguage(String languageCode) {

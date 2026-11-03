@@ -51,7 +51,8 @@ class OwnerTrainingModeTest {
         when(valueOps.get(anyString())).thenReturn(null);
 
         parser = new OwnerCommandParser(notificationService, knowledgeBaseService,
-                conflictDetectionService, redisTemplate, new ObjectMapper(), eventPublisher);
+                conflictDetectionService, redisTemplate, new ObjectMapper(), eventPublisher,
+                org.mockito.Mockito.mock(com.aireceptionist.common.voice.VoiceTransferPort.class));
     }
 
     @Test

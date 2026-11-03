@@ -88,11 +88,14 @@ public class VoiceCall {
      * by {@link #end}.
      */
     public void recordTurn(String callerText, String aiText, double confidence, Instant now) {
-        String turn = "Caller: " + callerText + "\nAI: " + aiText + "\n";
+        // Code review: NaN/infinite confidence would make BigDecimal.valueOf throw mid-call.
+        double safe = Double.isFinite(confidence) ? Math.max(0.0, Math.min(1.0, confidence)) : 0.0;
+        BigDecimal rounded = BigDecimal.valueOf(safe).setScale(2, RoundingMode.HALF_UP);
+        // Per-turn confidence is kept in the transcript line (6.4 AC3); last_confidence is the latest.
+        String turn = "Caller: " + callerText + "\nAI (" + rounded.toPlainString() + "): " + aiText + "\n";
         this.transcript = transcript == null ? turn : transcript + turn;
         this.aiResponseCount++;
-        this.lastConfidence = BigDecimal.valueOf(Math.max(0.0, Math.min(1.0, confidence)))
-                .setScale(2, RoundingMode.HALF_UP);
+        this.lastConfidence = rounded;
         this.status = VoiceCallStatus.HANDLED;
         this.durationSeconds = (int) Duration.between(startedAt, now).toSeconds();
     }
@@ -105,6 +108,14 @@ public class VoiceCall {
         String turn = "Caller: " + callerText + "\nSystem: " + systemText + "\n";
         this.transcript = transcript == null ? turn : transcript + turn;
         this.durationSeconds = (int) Duration.between(startedAt, now).toSeconds();
+    }
+
+    /**
+     * Story 6.2 (AC5), review decision: Exotel's status callback says the call is over. Records
+     * the real end time and duration; RECEIVED/HANDLED/TRANSFERRED/MISSED status is kept.
+     */
+    public void markEnded(Instant now) {
+        end(now);
     }
 
     /** Story 6.3 (AC3). */

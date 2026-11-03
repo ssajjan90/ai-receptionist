@@ -28,7 +28,10 @@ public class VoiceCallAlertListener {
         this.tenantNamePort = tenantNamePort;
     }
 
-    /** AC1, AC2: real-time owner alert with caller, call SID and the transfer action link. */
+    /**
+     * AC1, AC2: real-time owner alert with caller and call SID. The transfer action is a reply of
+     * TRANSFER (code-review decision: a link can't carry the owner's login, so tapping it failed).
+     */
     @ApplicationModuleListener
     public void onHumanFallbackRequested(VoiceHumanFallbackRequestedEvent event) {
         if (event.getOwnerPhone() == null) {
@@ -39,21 +42,30 @@ public class VoiceCallAlertListener {
                 + "Caller: " + sanitize(event.getCallerPhone()) + "\n"
                 + "Call SID: " + sanitize(event.getCallSid()) + "\n"
                 + "Reason: " + sanitize(event.getReason()) + "\n\n"
-                + "They are on hold for 60 seconds. Transfer Call: " + event.getTransferUrl();
+                + "They are on hold for 60 seconds. Reply TRANSFER to connect the call to your phone.";
         send(event.getTenantId(), event.getOwnerPhone(), message);
     }
 
-    /** AC5: owner didn't pick up — follow up with the caller (and tell the owner). */
+    /**
+     * AC5: nobody picked up — follow up with the caller (and tell the owner). With a withheld or
+     * unusable caller ID there's no one to message, so only the owner hears about it.
+     */
     @ApplicationModuleListener
     public void onCallbackRequested(VoiceCallbackRequestedEvent event) {
-        String businessName = tenantNamePort.getBusinessName(event.getTenantId()).orElse("us");
-        send(event.getTenantId(), event.getCallerPhone(),
-                "Hi! Sorry we couldn't connect you to our team when you called " + businessName
-                        + ". Someone will get back to you here shortly — feel free to type your question.");
+        String caller = event.getCallerPhone();
+        if (caller != null && !caller.isBlank()) {
+            String businessName = tenantNamePort.getBusinessName(event.getTenantId()).orElse("us");
+            send(event.getTenantId(), caller,
+                    "Hi! Sorry we couldn't connect you to our team when you called " + businessName
+                            + ". Someone will get back to you here shortly — feel free to type your question.");
+        }
         if (event.getOwnerPhone() != null) {
+            String who = caller == null || caller.isBlank() ? "a caller with a hidden number" : "caller " + sanitize(caller);
+            String followUp = caller == null || caller.isBlank()
+                    ? " We couldn't follow up because their number was hidden."
+                    : " We've told them you'll follow up on WhatsApp.";
             send(event.getTenantId(), event.getOwnerPhone(),
-                    "⏰ Missed transfer: caller " + sanitize(event.getCallerPhone())
-                            + " waited but wasn't connected. We've told them you'll follow up on WhatsApp.");
+                    "⏰ Missed transfer: " + who + " wanted to speak to someone but wasn't connected." + followUp);
         }
     }
 

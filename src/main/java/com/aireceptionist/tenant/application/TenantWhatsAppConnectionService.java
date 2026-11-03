@@ -92,7 +92,8 @@ public class TenantWhatsAppConnectionService implements ConnectTenantWhatsAppUse
     @Transactional(readOnly = true)
     public Optional<ResolvedTenantVoiceRoute> resolveByBusinessPhone(String businessPhone) {
         return tenantRepository.findByBusinessPhone(businessPhone)
-                .map(tenant -> new ResolvedTenantVoiceRoute(tenant.getId(), tenant.getTier()));
+                .map(tenant -> new ResolvedTenantVoiceRoute(tenant.getId(), tenant.getTier(),
+                        tenant.getStatus() == null ? null : tenant.getStatus().name()));
     }
 
     @Override

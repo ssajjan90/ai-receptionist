@@ -41,6 +41,8 @@ app:
     tts:
       # Story 6.2: Google Cloud TTS in prod (needs GOOGLE_APPLICATION_CREDENTIALS + VOICE_PUBLIC_BASE_URL)
       provider: ${VOICE_TTS_PROVIDER:google}
+    # No default: the app refuses to start without a public URL for Exotel callbacks/audio.
+    public-base-url: ${VOICE_PUBLIC_BASE_URL}
   ocr:
     provider: google
 

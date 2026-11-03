@@ -5,12 +5,15 @@ import com.google.cloud.texttospeech.v1.AudioConfig;
 import com.google.cloud.texttospeech.v1.AudioEncoding;
 import com.google.cloud.texttospeech.v1.SynthesisInput;
 import com.google.cloud.texttospeech.v1.SynthesizeSpeechResponse;
+import com.google.api.gax.retrying.RetrySettings;
 import com.google.cloud.texttospeech.v1.TextToSpeechClient;
+import com.google.cloud.texttospeech.v1.TextToSpeechSettings;
 import com.google.cloud.texttospeech.v1.VoiceSelectionParams;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -20,13 +23,21 @@ import org.springframework.stereotype.Service;
  *
  * <p>Output is MP3 — Exotel's {@code <Play>} accepts MP3/WAV over HTTPS; MP3 keeps the Redis
  * footprint of {@link VoiceAudioStore} small.
+ *
+ * <p>Each call has a hard deadline ({@code app.voice.tts.timeout-ms}, single attempt) so a slow
+ * Google API can't stall an Exotel webhook — callers fall back to {@code <Say>} (code review).
  */
 @Service
 public class TtsService {
 
     private static final Logger log = LoggerFactory.getLogger(TtsService.class);
 
+    private final java.time.Duration timeout;
     private volatile TextToSpeechClient client;
+
+    public TtsService(@Value("${app.voice.tts.timeout-ms:2500}") long timeoutMs) {
+        this.timeout = java.time.Duration.ofMillis(timeoutMs);
+    }
 
     @CircuitBreaker(name = "ttsService")
     public byte[] synthesize(String text, String languageCode) {
@@ -51,7 +62,14 @@ public class TtsService {
             synchronized (this) {
                 current = client;
                 if (current == null) {
-                    current = TextToSpeechClient.create();
+                    TextToSpeechSettings.Builder settings = TextToSpeechSettings.newBuilder();
+                    settings.synthesizeSpeechSettings().setRetrySettings(RetrySettings.newBuilder()
+                            .setMaxAttempts(1)
+                            .setInitialRpcTimeoutDuration(timeout)
+                            .setMaxRpcTimeoutDuration(timeout)
+                            .setTotalTimeoutDuration(timeout)
+                            .build());
+                    current = TextToSpeechClient.create(settings.build());
                     client = current;
                     log.info("Google TextToSpeechClient initialised");
                 }

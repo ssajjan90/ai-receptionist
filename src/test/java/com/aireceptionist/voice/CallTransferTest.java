@@ -6,6 +6,7 @@ import com.aireceptionist.common.ai.AiResponseResult;
 import com.aireceptionist.common.exception.ExternalServiceException;
 import com.aireceptionist.common.multitenancy.TenantContext;
 import com.aireceptionist.common.security.JwtTokenProvider;
+import com.aireceptionist.common.voice.VoiceTransferPort;
 import com.aireceptionist.voice.domain.VoiceCall;
 import com.aireceptionist.voice.domain.VoiceCallStatus;
 import com.aireceptionist.voice.repository.VoiceCallRepository;
@@ -77,6 +78,7 @@ class CallTransferTest extends AbstractIntegrationTest {
     @Autowired VoiceCallRepository voiceCallRepository;
     @Autowired StringRedisTemplate redisTemplate;
     @Autowired JwtTokenProvider tokenProvider;
+    @Autowired VoiceTransferPort voiceTransferPort;
 
     @Value("${app.exotel.shared-secret}")
     String sharedSecret;
@@ -126,7 +128,11 @@ class CallTransferTest extends AbstractIntegrationTest {
     }
 
     private ResultActions transfer(String callSid, UUID asTenant) throws Exception {
-        String token = tokenProvider.generateToken(asTenant.toString(), asTenant.toString(), "OWNER", "PRO");
+        return transfer(callSid, asTenant, "OWNER");
+    }
+
+    private ResultActions transfer(String callSid, UUID asTenant, String role) throws Exception {
+        String token = tokenProvider.generateToken(asTenant.toString(), asTenant.toString(), role, "PRO");
         return mockMvc.perform(post("/v1/voice/calls/" + callSid + "/transfer")
                 .header("Authorization", "Bearer " + token));
     }
@@ -219,6 +225,62 @@ class CallTransferTest extends AbstractIntegrationTest {
 
         assertThat(redisTemplate.hasKey("voice:transfer:" + callSid)).isTrue();
         assertThat(loadCall(callSid).getStatus()).isNotEqualTo(VoiceCallStatus.TRANSFERRED);
+    }
+
+    @Test
+    void ownerRepliesTransferOnWhatsAppToBridgeWaitingCall() throws Exception {
+        String callSid = "CA-" + UUID.randomUUID();
+        askForHuman(callSid).andExpect(status().isOk());
+
+        TenantContext.setCurrentTenant(tenantId.toString());
+        VoiceTransferPort.Outcome outcome;
+        try {
+            outcome = voiceTransferPort.transferWaitingCall(tenantId.toString(), ownerPhone);
+        } finally {
+            TenantContext.clear();
+        }
+
+        assertThat(outcome).isEqualTo(VoiceTransferPort.Outcome.TRANSFERRED);
+        assertThat(EXOTEL_CONNECTS.get(0)).containsExactly(callSid, ownerPhone, businessPhone);
+        assertThat(loadCall(callSid).getStatus()).isEqualTo(VoiceCallStatus.TRANSFERRED);
+    }
+
+    @Test
+    void timeoutAfterTransferKeyExpiredStillFollowsUp() throws Exception {
+        String callSid = "CA-" + UUID.randomUUID();
+        askForHuman(callSid).andExpect(status().isOk());
+        redisTemplate.delete("voice:transfer:" + callSid); // TTL lapsed / Redis evicted
+
+        timeout(callSid)
+                .andExpect(content().string(containsString("No agent is available right now")));
+        assertThat(loadCall(callSid).getStatus()).isEqualTo(VoiceCallStatus.MISSED);
+    }
+
+    @Test
+    void callerHangingUpDuringHoldIsMarkedMissed() throws Exception {
+        String callSid = "CA-" + UUID.randomUUID();
+        askForHuman(callSid).andExpect(status().isOk());
+
+        mockMvc.perform(post("/webhooks/voice/status")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("CallSid", callSid).param("From", caller).param("To", businessPhone)
+                        .param("Status", "completed")
+                        .header("X-Exotel-Signature", sign(callSid, caller, businessPhone, "completed")))
+                .andExpect(status().isOk());
+
+        VoiceCall call = loadCall(callSid);
+        assertThat(call.getStatus()).isEqualTo(VoiceCallStatus.MISSED);
+        assertThat(call.getEndedAt()).isNotNull();
+        assertThat(redisTemplate.hasKey("voice:transfer:" + callSid)).isFalse();
+    }
+
+    @Test
+    void nonOwnerRoleCannotTransfer() throws Exception {
+        String callSid = "CA-" + UUID.randomUUID();
+        askForHuman(callSid).andExpect(status().isOk());
+
+        transfer(callSid, tenantId, "STAFF").andExpect(status().isForbidden());
+        assertThat(EXOTEL_CONNECTS).isEmpty();
     }
 
     @Test

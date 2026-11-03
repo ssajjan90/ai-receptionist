@@ -1,6 +1,7 @@
 package com.aireceptionist.whatsapp.service;
 
 import com.aireceptionist.common.multitenancy.TenantContext;
+import com.aireceptionist.common.voice.VoiceTransferPort;
 import com.aireceptionist.knowledgebase.dto.ConflictInfo;
 import com.aireceptionist.knowledgebase.event.KbTrainingCompletedEvent;
 import com.aireceptionist.knowledgebase.service.ConflictDetectionService;
@@ -50,19 +51,25 @@ public class OwnerCommandParser {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final VoiceTransferPort voiceTransferPort;
+
+    // Story 6.3 (code-review decision): owner replies TRANSFER to the voice hold alert.
+    private static final Pattern TRANSFER_CMD = Pattern.compile("^TRANSFER[.!]?$", Pattern.CASE_INSENSITIVE);
 
     public OwnerCommandParser(WhatsAppNotificationService notificationService,
                                KnowledgeBaseService knowledgeBaseService,
                                ConflictDetectionService conflictDetectionService,
                                StringRedisTemplate redisTemplate,
                                ObjectMapper objectMapper,
-                               ApplicationEventPublisher eventPublisher) {
+                               ApplicationEventPublisher eventPublisher,
+                               VoiceTransferPort voiceTransferPort) {
         this.notificationService = notificationService;
         this.knowledgeBaseService = knowledgeBaseService;
         this.conflictDetectionService = conflictDetectionService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.voiceTransferPort = voiceTransferPort;
     }
 
     @ApplicationModuleListener
@@ -76,6 +83,13 @@ public class OwnerCommandParser {
             String trimmed = raw.trim();
             String tenantId = event.getTenantId();
             String ownerPhone = event.getSenderPhone();
+
+            // 0. Voice transfer — time-critical (caller is on a 60s hold), so it goes before
+            // training-mode replies, which would otherwise swallow "TRANSFER" as a KB answer.
+            if (TRANSFER_CMD.matcher(trimmed).matches()) {
+                handleVoiceTransfer(tenantId, ownerPhone);
+                return;
+            }
 
             // 1. Check for pending conflict resolution (CONFIRM/CANCEL)
             if (handlePendingConfirmation(trimmed, tenantId, ownerPhone)) {
@@ -112,6 +126,17 @@ public class OwnerCommandParser {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    private void handleVoiceTransfer(String tenantId, String ownerPhone) {
+        VoiceTransferPort.Outcome outcome = voiceTransferPort.transferWaitingCall(tenantId, ownerPhone);
+        String reply = switch (outcome) {
+            case TRANSFERRED -> "📞 Connecting the caller to you now — your phone will ring.";
+            case NO_CALL_WAITING -> "No caller is waiting for a transfer right now.";
+            case FAILED -> "⚠️ Couldn't connect the call. Reply TRANSFER to try again.";
+        };
+        log.info("Owner TRANSFER command for tenant={} → {}", tenantId, outcome);
+        notificationService.sendMessage(tenantId, ownerPhone, reply);
     }
 
     private boolean handleTrainingModeReply(String message, String tenantId, String ownerPhone) {
