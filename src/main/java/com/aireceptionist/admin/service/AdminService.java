@@ -619,11 +619,12 @@ public class AdminService {
 
     private <T> T withTenantContext(UUID tenantId, TenantWork<T> work) {
         return jdbcTemplate.execute((ConnectionCallback<T>) connection -> {
+            String previousTenantSetting = com.aireceptionist.common.multitenancy.TenantSessionSettings.current(connection);
             try {
                 setTenant(connection, tenantId);
                 return work.execute(connection);
             } finally {
-                resetTenant(connection);
+                com.aireceptionist.common.multitenancy.TenantSessionSettings.restore(connection, previousTenantSetting);
             }
         });
     }
@@ -635,11 +636,6 @@ public class AdminService {
         }
     }
 
-    private void resetTenant(Connection connection) throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("RESET app.current_tenant");
-        }
-    }
 
     private record TenantActivity(Instant lastActiveAt, long conversationCountLast24h, String subscriptionStatus) {
     }

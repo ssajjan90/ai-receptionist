@@ -35,7 +35,7 @@ class KnowledgeBasePropagationTest extends AbstractIntegrationTest {
 
     @Test
     void addProductPublishesKbUpdateOnPubSubChannel() throws InterruptedException {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<String> receivedChannel = new AtomicReference<>();
 
@@ -72,7 +72,7 @@ class KnowledgeBasePropagationTest extends AbstractIntegrationTest {
 
     @Test
     void addProductEvictsQueryCacheKeys() throws InterruptedException {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
 
         // Pre-populate a fake query cache key for the tenant
         String cacheKey = "tenant:" + tenantId + ":query:somehash";
@@ -94,7 +94,7 @@ class KnowledgeBasePropagationTest extends AbstractIntegrationTest {
 
     @Test
     void deleteEntryPublishesKbUpdateAndEvictsCache() throws InterruptedException {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
 
         // First add a product so we can delete it
         TenantContext.setCurrentTenant(tenantId.toString());

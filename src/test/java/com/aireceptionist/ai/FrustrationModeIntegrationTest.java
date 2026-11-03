@@ -36,9 +36,17 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
     @Autowired ApplicationEvents applicationEvents;
 
     static final AtomicReference<String> capturedSystemPrompt = new AtomicReference<>("");
+    // @RecordApplicationEvents only sees events published on the test thread; the frustration
+    // event is published on the async listener thread, so capture it with a listener bean.
+    static final java.util.concurrent.atomic.AtomicInteger frustrationEvents = new java.util.concurrent.atomic.AtomicInteger();
 
     @TestConfiguration
     static class CapturingAiConfig {
+        @org.springframework.context.event.EventListener
+        public void onFrustration(FrustrationDetectedEvent event) {
+            frustrationEvents.incrementAndGet();
+        }
+
         @Bean
         @Primary
         AiChatPort capturingAiChatPort() {
@@ -51,7 +59,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void frustrationKeywordSetsEmpathyModeInRedis() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919111000001";
 
         publishAndCommit(new InboundWhatsAppMessageEvent(
@@ -62,7 +70,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
             List<WhatsAppMessage> outbound = outboundFor(tenantId);
             assertThat(outbound).hasSize(1);
             assertThat(capturedSystemPrompt.get()).contains("frustrated");
-            assertThat(applicationEvents.stream(FrustrationDetectedEvent.class).count()).isGreaterThan(0);
+            assertThat(frustrationEvents.get()).isGreaterThan(0);
             assertThat(redisTemplate.opsForValue().get(
                     "conv:" + tenantId + ":" + sha256(phone) + ":mode")).isEqualTo("EMPATHY");
         });
@@ -70,7 +78,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void empathyModePersistsForFollowUpMessage() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919111000002";
 
         publishAndCommit(new InboundWhatsAppMessageEvent(
@@ -94,7 +102,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void normalMessageDoesNotUseEmpathyPrompt() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919111000003";
         capturedSystemPrompt.set("");
 
@@ -109,7 +117,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
     }
 
     private List<WhatsAppMessage> outboundFor(UUID tenantId) {
-        return messageRepository.findAll().stream()
+        return asTenant(tenantId, messageRepository::findAll).stream()
                 .filter(m -> m.getTenantId().equals(tenantId)
                         && m.getDirection() == MessageDirection.OUTBOUND)
                 .toList();

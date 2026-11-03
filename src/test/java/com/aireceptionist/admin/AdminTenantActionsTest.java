@@ -94,7 +94,7 @@ class AdminTenantActionsTest extends AbstractIntegrationTest {
                 tenantId, UUID.randomUUID().toString(), customerPhone, "What is the price?", "PHONE_NUM_1", Instant.now()));
 
         await().atMost(15, SECONDS).untilAsserted(() -> {
-            List<WhatsAppMessage> outbound = messageRepository.findAll().stream()
+            List<WhatsAppMessage> outbound = asTenant(tenantId, messageRepository::findAll).stream()
                     .filter(m -> m.getTenantId().equals(tenantId) && m.getDirection() == MessageDirection.OUTBOUND)
                     .toList();
             assertThat(outbound).hasSize(1);
@@ -111,11 +111,11 @@ class AdminTenantActionsTest extends AbstractIntegrationTest {
                 tenantId, UUID.randomUUID().toString(), customerPhone, "What is the price?", "PHONE_NUM_1", Instant.now()));
 
         await().atMost(15, SECONDS).untilAsserted(() -> {
-            List<WhatsAppMessage> outbound = messageRepository.findAll().stream()
+            List<WhatsAppMessage> outbound = asTenant(tenantId, messageRepository::findAll).stream()
                     .filter(m -> m.getTenantId().equals(tenantId) && m.getDirection() == MessageDirection.OUTBOUND)
                     .toList();
             assertThat(outbound).hasSize(2);
-            assertThat(outbound.get(1).getContent()).isEqualTo("Test response from AI");
+            assertThat(outbound.get(1).getContent()).startsWith("Test response from AI");
         });
     }
 

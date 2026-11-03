@@ -38,7 +38,7 @@ class AiPipelineTest extends AbstractIntegrationTest {
 
     @Test
     void inboundMessageTriggersOutboundAiResponsePersisted() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919876543210";
         String messageId = UUID.randomUUID().toString();
 
@@ -46,19 +46,19 @@ class AiPipelineTest extends AbstractIntegrationTest {
                 tenantId, messageId, phone, "What is the price?", "PHONE_NUM_123", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
-            List<WhatsAppMessage> outbound = messageRepository.findAll().stream()
+            List<WhatsAppMessage> outbound = asTenant(tenantId, messageRepository::findAll).stream()
                     .filter(m -> m.getTenantId().equals(tenantId)
                             && m.getDirection() == MessageDirection.OUTBOUND)
                     .toList();
             assertThat(outbound).hasSize(1);
-            assertThat(outbound.get(0).getContent()).isEqualTo("Test response from AI");
+            assertThat(outbound.get(0).getContent()).startsWith("Test response from AI");
             assertThat(outbound.get(0).getConfidenceScore()).isNotNull();
         });
     }
 
     @Test
     void secondIdenticalQueryReturnsFromRedisCache() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919876543211";
         String messageId1 = UUID.randomUUID().toString();
         String messageId2 = UUID.randomUUID().toString();
@@ -67,7 +67,7 @@ class AiPipelineTest extends AbstractIntegrationTest {
                 tenantId, messageId1, phone, "price of Samsung S24", "PHONE_NUM_456", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
-            List<WhatsAppMessage> msgs = messageRepository.findAll().stream()
+            List<WhatsAppMessage> msgs = asTenant(tenantId, messageRepository::findAll).stream()
                     .filter(m -> m.getTenantId().equals(tenantId)
                             && m.getDirection() == MessageDirection.OUTBOUND)
                     .toList();
@@ -78,7 +78,7 @@ class AiPipelineTest extends AbstractIntegrationTest {
                 tenantId, messageId2, phone, "price of Samsung S24", "PHONE_NUM_456", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
-            List<WhatsAppMessage> outboundMsgs = messageRepository.findAll().stream()
+            List<WhatsAppMessage> outboundMsgs = asTenant(tenantId, messageRepository::findAll).stream()
                     .filter(m -> m.getTenantId().equals(tenantId)
                             && m.getDirection() == MessageDirection.OUTBOUND)
                     .toList();

@@ -21,6 +21,7 @@ public class JdbcSubscriptionProvisioningAdapter implements SubscriptionProvisio
     @Override
     public void provisionBasicSubscription(UUID tenantId) {
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            String previousTenantSetting = com.aireceptionist.common.multitenancy.TenantSessionSettings.current(connection);
             try {
                 try (Statement tenantStatement = connection.createStatement()) {
                     tenantStatement.execute("SELECT set_config('app.current_tenant', '" + tenantId + "', false)");
@@ -33,9 +34,7 @@ public class JdbcSubscriptionProvisioningAdapter implements SubscriptionProvisio
                     statement.executeUpdate();
                 }
             } finally {
-                try (Statement tenantStatement = connection.createStatement()) {
-                    tenantStatement.execute("RESET app.current_tenant");
-                }
+                com.aireceptionist.common.multitenancy.TenantSessionSettings.restore(connection, previousTenantSetting);
             }
             return null;
         });

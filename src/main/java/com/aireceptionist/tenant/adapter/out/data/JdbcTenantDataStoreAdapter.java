@@ -45,6 +45,7 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
     @Override
     public void eraseTenantData(UUID tenantId) {
         withTenantContext(tenantId, () -> jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            String previousTenantSetting = com.aireceptionist.common.multitenancy.TenantSessionSettings.current(connection);
             try {
                 setTenant(connection, tenantId);
                 deleteTenantRows(connection, "subscriptions", tenantId);
@@ -53,7 +54,7 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
                 deleteTenantRows(connection, "leads", tenantId);
                 deleteTenantRows(connection, "knowledge_entries", tenantId);
             } finally {
-                resetTenant(connection);
+                com.aireceptionist.common.multitenancy.TenantSessionSettings.restore(connection, previousTenantSetting);
             }
             return null;
         }));
@@ -63,6 +64,7 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
     public TenantDataExport exportTenantData(UUID tenantId) {
         return withTenantContext(tenantId, () -> jdbcTemplate.execute(
                 (ConnectionCallback<TenantDataExport>) connection -> {
+                    String previousTenantSetting = com.aireceptionist.common.multitenancy.TenantSessionSettings.current(connection);
                     try {
                         setTenant(connection, tenantId);
                         List<Map<String, Object>> knowledgeEntries = queryForMaps(connection, """
@@ -91,7 +93,7 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
                                 messageHashes
                         );
                     } finally {
-                        resetTenant(connection);
+                        com.aireceptionist.common.multitenancy.TenantSessionSettings.restore(connection, previousTenantSetting);
                     }
                 }));
     }
@@ -116,11 +118,6 @@ public class JdbcTenantDataStoreAdapter implements TenantDataStorePort {
         }
     }
 
-    private void resetTenant(Connection connection) throws java.sql.SQLException {
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("RESET app.current_tenant");
-        }
-    }
 
     private void deleteTenantRows(Connection connection, String table, UUID tenantId) throws java.sql.SQLException {
         try (PreparedStatement statement = connection.prepareStatement(

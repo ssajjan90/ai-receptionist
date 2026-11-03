@@ -23,6 +23,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Testcontainers(disabledWithoutDocker = true)
@@ -114,6 +115,42 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate integrationJdbcTemplate;
+
+    private static final java.util.concurrent.atomic.AtomicLong PHONE_SEQ = new java.util.concurrent.atomic.AtomicLong(System.nanoTime() % 1_000_000L);
+
+    /**
+     * Runs a verification read on the test thread scoped to {@code tenantId}: the RLS-protected
+     * tables return nothing to an unscoped session, so "the listener wrote it" checks need this.
+     */
+    protected <T> T asTenant(UUID tenantId, java.util.function.Supplier<T> read) {
+        String previous = TenantContext.getCurrentTenant();
+        TenantContext.setCurrentTenant(tenantId.toString());
+        try {
+            return read.get();
+        } finally {
+            if (previous != null) {
+                TenantContext.setCurrentTenant(previous);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    /**
+     * A real LIVE tenant row. Every tenant-scoped table has a FK to {@code tenants}, so events for a
+     * made-up {@code UUID.randomUUID()} tenant fail at insert — which used to be hidden behind the
+     * RLS reset bug (see TenantSessionSettings) and surfaced only as listener timeouts.
+     */
+    protected UUID newTenant() {
+        UUID id = UUID.randomUUID();
+        long n = PHONE_SEQ.incrementAndGet();
+        integrationJdbcTemplate.update(
+                "INSERT INTO tenants (id, business_name, phone_number, owner_phone, tier, status) VALUES (?, ?, ?, ?, 'PRO', 'LIVE')",
+                id, "Integration Test Shop", "+9170" + String.format("%08d", n % 100_000_000L),
+                "+9171" + String.format("%08d", n % 100_000_000L));
+        return id;
+    }
 
     // Two compounding bugs made every @ApplicationModuleListener-driven integration test hang on
     // its awaitility assertion, independent of (and on top of) the container-restart bug fixed

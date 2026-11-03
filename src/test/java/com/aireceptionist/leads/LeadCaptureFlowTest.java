@@ -56,7 +56,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
 
     @Test
     void intentMessageSendsConsentAndLeadPhaseSetToConsentSent() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String senderPhone = "+919876540001";
 
         publishAndCommit(new InboundWhatsAppMessageEvent(
@@ -72,7 +72,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
 
     @Test
     void nameAndPhoneReplyCreatesLeadInDb() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String senderPhone = "+919876540002";
         String phaseKey = "conv:" + tenantId + ":" + sha256(senderPhone) + ":lead_capture_phase";
 
@@ -85,7 +85,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
                 "Ravi Kumar 9876543210", "PH_NUM", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
-            var leads = leadRepository.findAll().stream()
+            var leads = asTenant(tenantId, leadRepository::findAll).stream()
                     .filter(l -> l.getTenantId().equals(tenantId))
                     .toList();
             assertThat(leads).hasSize(1);
@@ -98,7 +98,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
 
     @Test
     void declineDoesNotCreateLead() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String senderPhone = "+919876540003";
         String phaseKey = "conv:" + tenantId + ":" + sha256(senderPhone) + ":lead_capture_phase";
         redisTemplate.opsForValue().set(phaseKey, "CONSENT_SENT");
@@ -114,7 +114,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
 
         // Give async listener time, then verify no lead
         await().atMost(2, SECONDS).untilAsserted(() -> {
-            var leads = leadRepository.findAll().stream()
+            var leads = asTenant(tenantId, leadRepository::findAll).stream()
                     .filter(l -> l.getTenantId().equals(tenantId))
                     .toList();
             assertThat(leads).isEmpty();

@@ -23,6 +23,7 @@ public class AuditLogRepository implements AuditLogWriter {
     @Override
     public void save(AuditLogEntry entry) {
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            String previousTenantSetting = com.aireceptionist.common.multitenancy.TenantSessionSettings.current(connection);
             try {
                 try (PreparedStatement tenantStatement = connection.prepareStatement("SELECT set_config(?, ?, false)")) {
                     tenantStatement.setString(1, "app.current_tenant");
@@ -42,9 +43,7 @@ public class AuditLogRepository implements AuditLogWriter {
                     statement.executeUpdate();
                 }
             } finally {
-                try (Statement tenantStatement = connection.createStatement()) {
-                    tenantStatement.execute("RESET app.current_tenant");
-                }
+                com.aireceptionist.common.multitenancy.TenantSessionSettings.restore(connection, previousTenantSetting);
             }
             return null;
         });
@@ -53,6 +52,7 @@ public class AuditLogRepository implements AuditLogWriter {
     public void markResolved(UUID auditLogId, Instant resolvedAt) {
         String tenantId = TenantContext.getCurrentTenant();
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            String previousTenantSetting = com.aireceptionist.common.multitenancy.TenantSessionSettings.current(connection);
             try {
                 if (tenantId != null && !tenantId.isBlank()) {
                     try (PreparedStatement stmt = connection.prepareStatement("SELECT set_config(?, ?, false)")) {
@@ -68,9 +68,7 @@ public class AuditLogRepository implements AuditLogWriter {
                     stmt.executeUpdate();
                 }
             } finally {
-                try (Statement stmt = connection.createStatement()) {
-                    stmt.execute("RESET app.current_tenant");
-                }
+                com.aireceptionist.common.multitenancy.TenantSessionSettings.restore(connection, previousTenantSetting);
             }
             return null;
         });
@@ -82,6 +80,7 @@ public class AuditLogRepository implements AuditLogWriter {
 
     public long countByTenantIdAndEventTypeAndOccurredAtAfter(UUID tenantId, String eventType, Instant after) {
         return jdbcTemplate.execute((ConnectionCallback<Long>) connection -> {
+            String previousTenantSetting = com.aireceptionist.common.multitenancy.TenantSessionSettings.current(connection);
             try {
                 try (PreparedStatement tenantStatement = connection.prepareStatement("SELECT set_config(?, ?, false)")) {
                     tenantStatement.setString(1, "app.current_tenant");
@@ -101,9 +100,7 @@ public class AuditLogRepository implements AuditLogWriter {
                     }
                 }
             } finally {
-                try (Statement tenantStatement = connection.createStatement()) {
-                    tenantStatement.execute("RESET app.current_tenant");
-                }
+                com.aireceptionist.common.multitenancy.TenantSessionSettings.restore(connection, previousTenantSetting);
             }
         });
     }

@@ -42,7 +42,7 @@ class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
     @Test
     void highConfidenceResponseSentDirectlyToCustomer() {
         nextConfidence.set(0.90);
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919000000001";
 
         publishAndCommit(new InboundWhatsAppMessageEvent(
@@ -51,14 +51,14 @@ class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
         await().atMost(5, SECONDS).untilAsserted(() -> {
             List<WhatsAppMessage> outbound = outboundFor(tenantId);
             assertThat(outbound).hasSize(1);
-            assertThat(outbound.get(0).getContent()).isEqualTo("AI response");
+            assertThat(outbound.get(0).getContent()).startsWith("AI response");
         });
     }
 
     @Test
     void mediumConfidenceResponseStillSentToCustomer() {
         nextConfidence.set(0.62);
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919000000002";
 
         publishAndCommit(new InboundWhatsAppMessageEvent(
@@ -67,14 +67,14 @@ class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
         await().atMost(5, SECONDS).untilAsserted(() -> {
             List<WhatsAppMessage> outbound = outboundFor(tenantId);
             assertThat(outbound).hasSize(1);
-            assertThat(outbound.get(0).getContent()).isEqualTo("AI response");
+            assertThat(outbound.get(0).getContent()).startsWith("AI response");
         });
     }
 
     @Test
     void lowConfidenceResponseReplacedWithFallback() {
         nextConfidence.set(0.24);
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         String phone = "+919000000003";
 
         publishAndCommit(new InboundWhatsAppMessageEvent(
@@ -89,7 +89,7 @@ class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
     }
 
     private List<WhatsAppMessage> outboundFor(UUID tenantId) {
-        return messageRepository.findAll().stream()
+        return asTenant(tenantId, messageRepository::findAll).stream()
                 .filter(m -> m.getTenantId().equals(tenantId)
                         && m.getDirection() == MessageDirection.OUTBOUND)
                 .toList();

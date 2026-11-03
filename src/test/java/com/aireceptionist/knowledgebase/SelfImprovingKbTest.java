@@ -55,7 +55,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
 
     @Test
     void ownerReplyToUnansweredQueryAddsKbEntryAndResolvesAuditLog() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         UUID auditLogId = UUID.randomUUID();
         String ownerPhone = "+911234567890";
         String question = "What is your return policy?";
@@ -83,7 +83,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
                 new OwnerCommandReceivedEvent(tenantId.toString(), answer, ownerPhone, Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
-            var entries = entryRepository.findByTenantId(tenantId).stream()
+            var entries = asTenant(tenantId, () -> entryRepository.findByTenantId(tenantId)).stream()
                     .filter(e -> "OWNER_TRAINED".equals(e.getSource()))
                     .toList();
             assertThat(entries).hasSize(1);
@@ -100,7 +100,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
 
     @Test
     void ownerSkipDoesNotAddKbEntryAndClearsKey() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         UUID auditLogId = UUID.randomUUID();
         String ownerPhone = "+911111111111";
         String question = "Do you have student discounts?";
@@ -130,7 +130,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
             assertThat(redisTemplate.opsForValue().get(key)).isNull();
         });
 
-        var entries = entryRepository.findByTenantId(tenantId).stream()
+        var entries = asTenant(tenantId, () -> entryRepository.findByTenantId(tenantId)).stream()
                 .filter(e -> "OWNER_TRAINED".equals(e.getSource()))
                 .toList();
         assertThat(entries).isEmpty();
@@ -138,7 +138,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
 
     @Test
     void propagationEventPublishedAfterTraining() {
-        UUID tenantId = UUID.randomUUID();
+        UUID tenantId = newTenant();
         UUID auditLogId = UUID.randomUUID();
         String ownerPhone = "+912222222222";
         String question = "What are your business hours?";
@@ -163,7 +163,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
                 new OwnerCommandReceivedEvent(tenantId.toString(), answer, ownerPhone, Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
-            var entries = entryRepository.findByTenantId(tenantId).stream()
+            var entries = asTenant(tenantId, () -> entryRepository.findByTenantId(tenantId)).stream()
                     .filter(e -> "OWNER_TRAINED".equals(e.getSource()))
                     .toList();
             assertThat(entries).hasSize(1);
