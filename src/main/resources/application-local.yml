@@ -23,6 +23,10 @@ logging:
     com.aireceptionist: DEBUG
 
 app:
+  voice:
+    tts:
+      # Story 6.2: Exotel built-in <Say> TTS locally — no Google credentials needed
+      provider: say
   ocr:
     provider: tesseract
   jwt:

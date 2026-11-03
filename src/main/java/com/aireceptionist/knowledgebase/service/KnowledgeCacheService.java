@@ -19,7 +19,12 @@ import java.util.List;
 public class KnowledgeCacheService implements MessageListener {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeCacheService.class);
-    private static final String QUERY_CACHE_PATTERN = "tenant:%s:kb:*";
+    // Two per-tenant caches go stale when the KB changes: KnowledgeBaseService's search cache
+    // (tenant:{id}:kb:*) and LlmService's AI-answer cache (tenant:{id}:query:*, 5 min TTL).
+    // Only the first used to be evicted, so a repeated question kept getting the old answer for
+    // up to 5 minutes on WhatsApp and voice alike — breaking NFR3's 60s propagation (found by
+    // story 6.4's VoiceKbReuseTest).
+    private static final List<String> QUERY_CACHE_PATTERNS = List.of("tenant:%s:kb:*", "tenant:%s:query:*");
 
     private final StringRedisTemplate redisTemplate;
 
@@ -43,7 +48,12 @@ public class KnowledgeCacheService implements MessageListener {
     }
 
     private void evictQueryCache(String tenantId) {
-        String pattern = String.format(QUERY_CACHE_PATTERN, tenantId);
+        for (String patternTemplate : QUERY_CACHE_PATTERNS) {
+            evictMatching(String.format(patternTemplate, tenantId), tenantId);
+        }
+    }
+
+    private void evictMatching(String pattern, String tenantId) {
         ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
         try {
             redisTemplate.execute((RedisCallback<Void>) connection -> {
@@ -53,7 +63,7 @@ public class KnowledgeCacheService implements MessageListener {
                 }
                 if (!keysToDelete.isEmpty()) {
                     connection.del(keysToDelete.toArray(new byte[0][]));
-                    log.debug("Evicted {} query cache keys for tenant={}", keysToDelete.size(), tenantId);
+                    log.debug("Evicted {} cache keys ({}) for tenant={}", keysToDelete.size(), pattern, tenantId);
                 }
                 return null;
             });

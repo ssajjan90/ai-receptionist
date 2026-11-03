@@ -9,6 +9,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -20,6 +23,10 @@ import java.util.UUID;
  * established-artifact drift as story 5.6's BYPASSRLS note. duration/transcript/aiResponseCount
  * are presumably introduced by a later voice story (6.2+); this story only receives and records
  * the call.
+ *
+ * <p>Story 6.2 (AC5) adds {@code duration_seconds}, {@code transcript}, {@code ai_response_count}
+ * and {@code last_confidence} (V27). The story's {@code createdAt} maps to the existing
+ * {@code started_at}. Story 6.4 (AC3): text only — there is deliberately no audio column.
  */
 @Entity
 @Table(name = "voice_calls")
@@ -48,6 +55,18 @@ public class VoiceCall {
     @Column(name = "ended_at")
     private Instant endedAt;
 
+    @Column(name = "duration_seconds")
+    private Integer durationSeconds;
+
+    @Column(name = "transcript", columnDefinition = "TEXT")
+    private String transcript;
+
+    @Column(name = "ai_response_count", nullable = false)
+    private int aiResponseCount;
+
+    @Column(name = "last_confidence", precision = 3, scale = 2)
+    private BigDecimal lastConfidence;
+
     protected VoiceCall() {
     }
 
@@ -61,6 +80,48 @@ public class VoiceCall {
 
     public static VoiceCall receive(UUID tenantId, String callSid, String callerPhone) {
         return new VoiceCall(tenantId, callSid, callerPhone);
+    }
+
+    /**
+     * Story 6.2 (AC5): appends one caller/AI exchange to the transcript and bumps the AI response
+     * count. Duration is a rolling "connected so far" figure, refreshed every turn and finalised
+     * by {@link #end}.
+     */
+    public void recordTurn(String callerText, String aiText, double confidence, Instant now) {
+        String turn = "Caller: " + callerText + "\nAI: " + aiText + "\n";
+        this.transcript = transcript == null ? turn : transcript + turn;
+        this.aiResponseCount++;
+        this.lastConfidence = BigDecimal.valueOf(Math.max(0.0, Math.min(1.0, confidence)))
+                .setScale(2, RoundingMode.HALF_UP);
+        this.status = VoiceCallStatus.HANDLED;
+        this.durationSeconds = (int) Duration.between(startedAt, now).toSeconds();
+    }
+
+    /**
+     * Story 6.3 (AC1): caller explicitly asked for a human — no AI answer was generated, so the
+     * AI response count and confidence are left untouched.
+     */
+    public void recordHumanRequest(String callerText, String systemText, Instant now) {
+        String turn = "Caller: " + callerText + "\nSystem: " + systemText + "\n";
+        this.transcript = transcript == null ? turn : transcript + turn;
+        this.durationSeconds = (int) Duration.between(startedAt, now).toSeconds();
+    }
+
+    /** Story 6.3 (AC3). */
+    public void markTransferred(Instant now) {
+        this.status = VoiceCallStatus.TRANSFERRED;
+        end(now);
+    }
+
+    /** Story 6.3 (AC5): human fallback requested but no one picked up. */
+    public void markMissed(Instant now) {
+        this.status = VoiceCallStatus.MISSED;
+        end(now);
+    }
+
+    private void end(Instant now) {
+        this.endedAt = now;
+        this.durationSeconds = (int) Duration.between(startedAt, now).toSeconds();
     }
 
     public UUID getId() {
@@ -89,5 +150,21 @@ public class VoiceCall {
 
     public Instant getEndedAt() {
         return endedAt;
+    }
+
+    public Integer getDurationSeconds() {
+        return durationSeconds;
+    }
+
+    public String getTranscript() {
+        return transcript;
+    }
+
+    public int getAiResponseCount() {
+        return aiResponseCount;
+    }
+
+    public BigDecimal getLastConfidence() {
+        return lastConfidence;
     }
 }

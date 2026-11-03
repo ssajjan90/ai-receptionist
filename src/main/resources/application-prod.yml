@@ -37,6 +37,10 @@ logging:
     com.aireceptionist: INFO
 
 app:
+  voice:
+    tts:
+      # Story 6.2: Google Cloud TTS in prod (needs GOOGLE_APPLICATION_CREDENTIALS + VOICE_PUBLIC_BASE_URL)
+      provider: ${VOICE_TTS_PROVIDER:google}
   ocr:
     provider: google
 

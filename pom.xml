@@ -207,6 +207,14 @@
 			<artifactId>google-cloud-vision</artifactId>
 			<version>3.90.0</version>
 		</dependency>
+		<!-- Story 6.2: voice TTS. 2.93.0 (not the story's 2.46.0) is the release on the same gax
+		     2.80.0 / google-cloud-java train as google-cloud-vision 3.90.0 above, avoiding a
+		     gax/grpc version clash between the two clients. -->
+		<dependency>
+			<groupId>com.google.cloud</groupId>
+			<artifactId>google-cloud-texttospeech</artifactId>
+			<version>2.93.0</version>
+		</dependency>
 		<dependency>
 			<groupId>net.sourceforge.tess4j</groupId>
 			<artifactId>tess4j</artifactId>

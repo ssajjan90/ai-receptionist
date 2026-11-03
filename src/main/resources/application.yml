@@ -64,6 +64,17 @@ app:
     api-token: ${EXOTEL_API_TOKEN:test-exotel-api-token}
     shared-secret: ${EXOTEL_SHARED_SECRET:test-exotel-shared-secret}
     sid: ${EXOTEL_SID:test-exotel-sid}
+    # Story 6.3: Exotel REST API base (call bridging for live transfer).
+    api-url: ${EXOTEL_API_URL:https://api.exotel.com}
+  voice:
+    # Public HTTPS base URL Exotel uses to fetch synthesized audio (<Play>) and call back webhooks.
+    public-base-url: ${VOICE_PUBLIC_BASE_URL:http://localhost:8080}
+    tts:
+      # say   = Exotel's built-in <Say> TTS (no external API; default, used for local dev/tests)
+      # google = Google Cloud TTS audio served back to Exotel via <Play>
+      provider: ${VOICE_TTS_PROVIDER:say}
+      greeting-ttl-days: ${VOICE_GREETING_TTL_DAYS:30}
+      response-ttl-minutes: ${VOICE_RESPONSE_AUDIO_TTL_MINUTES:10}
   ocr:
     provider: ${OCR_PROVIDER:google}
   export:
@@ -113,6 +124,18 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 1
         sliding-window-type: COUNT_BASED
       whatsAppNotificationService:
+        sliding-window-size: 5
+        failure-rate-threshold: 100
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        sliding-window-type: COUNT_BASED
+      ttsService:
+        sliding-window-size: 5
+        failure-rate-threshold: 100
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1
+        sliding-window-type: COUNT_BASED
+      exotelApi:
         sliding-window-size: 5
         failure-rate-threshold: 100
         wait-duration-in-open-state: 30s
