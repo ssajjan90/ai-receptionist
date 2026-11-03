@@ -11,6 +11,9 @@ public class TenantIdentifierResolver implements CurrentTenantIdentifierResolver
     @Override
     public String resolveCurrentTenantIdentifier() {
         String tenantId = TenantContext.getCurrentTenant();
+        org.slf4j.LoggerFactory.getLogger(TenantIdentifierResolver.class).error(
+                "DEBUG_PROBE_RESOLVE tenantId={} thread={}", tenantId, Thread.currentThread().getName(),
+                new Exception("stack"));
         return tenantId != null ? tenantId : DEFAULT_TENANT;
     }
 

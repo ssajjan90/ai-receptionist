@@ -9,7 +9,6 @@ import com.aireceptionist.whatsapp.event.OwnerCommandReceivedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,7 +24,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 class SelfImprovingKbTest extends AbstractIntegrationTest {
 
-    @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired KnowledgeEntryRepository entryRepository;
     @Autowired AuditLogRepository auditLogRepository;
     @Autowired StringRedisTemplate redisTemplate;
@@ -72,7 +70,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
                 Instant.now()
         ));
 
-        eventPublisher.publishEvent(
+        publishAndCommit(
                 new UnansweredQueryFlaggedEvent(tenantId.toString(), "+919876543210", question, ownerPhone, auditLogId));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -81,7 +79,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
             assertThat(json).isNotNull().contains("return policy").contains(auditLogId.toString());
         });
 
-        eventPublisher.publishEvent(
+        publishAndCommit(
                 new OwnerCommandReceivedEvent(tenantId.toString(), answer, ownerPhone, Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -116,7 +114,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
                 Instant.now()
         ));
 
-        eventPublisher.publishEvent(
+        publishAndCommit(
                 new UnansweredQueryFlaggedEvent(tenantId.toString(), "+919999999999", question, ownerPhone, auditLogId));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -124,7 +122,7 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
             assertThat(redisTemplate.opsForValue().get(key)).isNotNull();
         });
 
-        eventPublisher.publishEvent(
+        publishAndCommit(
                 new OwnerCommandReceivedEvent(tenantId.toString(), "SKIP", ownerPhone, Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -155,13 +153,13 @@ class SelfImprovingKbTest extends AbstractIntegrationTest {
                 Instant.now()
         ));
 
-        eventPublisher.publishEvent(
+        publishAndCommit(
                 new UnansweredQueryFlaggedEvent(tenantId.toString(), "+918888888888", question, ownerPhone, auditLogId));
 
         await().atMost(5, SECONDS).untilAsserted(() ->
                 assertThat(redisTemplate.opsForValue().get("train:" + tenantId + ":" + ownerPhone)).isNotNull());
 
-        eventPublisher.publishEvent(
+        publishAndCommit(
                 new OwnerCommandReceivedEvent(tenantId.toString(), answer, ownerPhone, Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {

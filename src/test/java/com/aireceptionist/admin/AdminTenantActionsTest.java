@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,7 +44,6 @@ class AdminTenantActionsTest extends AbstractIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired JwtTokenProvider tokenProvider;
     @Autowired JdbcTemplate jdbcTemplate;
-    @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired WhatsAppMessageRepository messageRepository;
     @Autowired AuditLogRepository auditLogRepository;
     @Autowired WhatsAppNotificationService notificationService;
@@ -92,7 +90,7 @@ class AdminTenantActionsTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SUSPENDED"));
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), customerPhone, "What is the price?", "PHONE_NUM_1", Instant.now()));
 
         await().atMost(15, SECONDS).untilAsserted(() -> {
@@ -109,7 +107,7 @@ class AdminTenantActionsTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("LIVE"));
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), customerPhone, "What is the price?", "PHONE_NUM_1", Instant.now()));
 
         await().atMost(15, SECONDS).untilAsserted(() -> {

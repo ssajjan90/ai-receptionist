@@ -11,7 +11,6 @@ import com.aireceptionist.whatsapp.repository.WhatsAppMessageRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -32,7 +31,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 @RecordApplicationEvents
 class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
 
-    @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired WhatsAppMessageRepository messageRepository;
     @Autowired StringRedisTemplate redisTemplate;
     @Autowired ApplicationEvents applicationEvents;
@@ -56,7 +54,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         String phone = "+919111000001";
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), phone,
                 "This product cheated me and I want a refund!", "PHONE_F01", Instant.now()));
 
@@ -75,7 +73,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         String phone = "+919111000002";
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), phone,
                 "I want to complain about my order", "PHONE_F02", Instant.now()));
 
@@ -84,7 +82,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
 
         capturedSystemPrompt.set("");
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), phone,
                 "Can you help me with this?", "PHONE_F03", Instant.now()));
 
@@ -100,7 +98,7 @@ class FrustrationModeIntegrationTest extends AbstractIntegrationTest {
         String phone = "+919111000003";
         capturedSystemPrompt.set("");
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), phone,
                 "What is the price of Samsung S24?", "PHONE_F04", Instant.now()));
 

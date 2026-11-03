@@ -10,7 +10,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,7 +25,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 class LeadCaptureFlowTest extends AbstractIntegrationTest {
 
-    @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired LeadRepository leadRepository;
     @Autowired StringRedisTemplate redisTemplate;
 
@@ -61,7 +59,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         String senderPhone = "+919876540001";
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), senderPhone,
                 "I want to buy the Samsung phone", "PH_NUM", Instant.now()));
 
@@ -82,7 +80,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
         redisTemplate.opsForValue().set(phaseKey, "CONSENT_SENT");
 
         // Customer replies with name and phone
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), senderPhone,
                 "Ravi Kumar 9876543210", "PH_NUM", Instant.now()));
 
@@ -105,7 +103,7 @@ class LeadCaptureFlowTest extends AbstractIntegrationTest {
         String phaseKey = "conv:" + tenantId + ":" + sha256(senderPhone) + ":lead_capture_phase";
         redisTemplate.opsForValue().set(phaseKey, "CONSENT_SENT");
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), senderPhone,
                 "no thanks", "PH_NUM", Instant.now()));
 

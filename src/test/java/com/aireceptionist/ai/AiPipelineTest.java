@@ -10,7 +10,6 @@ import com.aireceptionist.whatsapp.repository.WhatsAppMessageRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -25,7 +24,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 class AiPipelineTest extends AbstractIntegrationTest {
 
-    @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired WhatsAppMessageRepository messageRepository;
     @Autowired StringRedisTemplate redisTemplate;
 
@@ -44,7 +42,7 @@ class AiPipelineTest extends AbstractIntegrationTest {
         String phone = "+919876543210";
         String messageId = UUID.randomUUID().toString();
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, messageId, phone, "What is the price?", "PHONE_NUM_123", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -65,7 +63,7 @@ class AiPipelineTest extends AbstractIntegrationTest {
         String messageId1 = UUID.randomUUID().toString();
         String messageId2 = UUID.randomUUID().toString();
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, messageId1, phone, "price of Samsung S24", "PHONE_NUM_456", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -76,7 +74,7 @@ class AiPipelineTest extends AbstractIntegrationTest {
             assertThat(msgs).isNotEmpty();
         });
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, messageId2, phone, "price of Samsung S24", "PHONE_NUM_456", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {

@@ -10,7 +10,6 @@ import com.aireceptionist.whatsapp.repository.WhatsAppMessageRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,7 +25,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
 
-    @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired WhatsAppMessageRepository messageRepository;
     @Autowired StringRedisTemplate redisTemplate;
 
@@ -47,7 +45,7 @@ class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         String phone = "+919000000001";
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), phone, "price of iPhone", "PHONE_001", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -63,7 +61,7 @@ class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         String phone = "+919000000002";
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), phone, "some uncertain query", "PHONE_002", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {
@@ -79,7 +77,7 @@ class ConfidenceGatingIntegrationTest extends AbstractIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         String phone = "+919000000003";
 
-        eventPublisher.publishEvent(new InboundWhatsAppMessageEvent(
+        publishAndCommit(new InboundWhatsAppMessageEvent(
                 tenantId, UUID.randomUUID().toString(), phone, "totally unknown question", "PHONE_003", Instant.now()));
 
         await().atMost(5, SECONDS).untilAsserted(() -> {

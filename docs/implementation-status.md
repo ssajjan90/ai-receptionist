@@ -1,247 +1,124 @@
 # AI Receptionist — Implementation Status
 
-**Last updated:** 2026-05-22  
-**Project:** Multi-tenant B2B SaaS — AI-powered WhatsApp + Voice receptionist for Indian SMBs  
-**Stack:** Java 17, Spring Boot (Spring Modulith), PostgreSQL, Redis, JWT RS256
+**Last updated:** 2026-09-17
+**Project:** Multi-tenant B2B SaaS — AI-powered WhatsApp + Voice receptionist for Indian SMBs
+**Stack:** Java 17, Spring Boot + Spring Modulith, PostgreSQL (Flyway, RLS), Redis, JWT RS256
+
+**Overall progress:** Far more is built than the previous version of this doc showed. Epics 1–5 (foundation, onboarding, AI WhatsApp pipeline, leads, admin/compliance) are essentially feature-complete end to end. Epic 6 (Voice) has only its first story done. Epics 7 (Billing) and 8 (Franchise) have not been started. The most urgent issue right now is not a missing feature — it's that **CI on `main` is currently red** (see Testing & CI below).
 
 ---
 
-## Quick Summary
+## System Overview
 
-| Epic | Title | Status |
-|------|-------|--------|
-| Epic 1 | Platform Foundation & Infrastructure | **Complete** |
-| Epic 2 | Tenant Registration & Business Onboarding | **Complete** |
-| Epic 3 | AI WhatsApp Customer Service & Knowledge Base | **Not started** |
-| Epic 4 | Lead Management & Owner Visibility | **Not started (DB schema exists)** |
-| Epic 5 | Platform Administration & Compliance | **Partial — infrastructure done, admin UI not started** |
-| Epic 6 | Voice Communication *(Phase 1b)* | **Not started** |
-| Epic 7 | Subscription & Billing *(Phase 1b)* | **Not started** |
-| Epic 8 | Franchise & Multi-Location *(Phase 2)* | **Not started** |
+A Spring Boot backend (single Maven module at repo root, package `com.aireceptionist`) organized as Spring Modulith modules — `tenant`, `knowledgebase`, `whatsapp`, `voice`, `leads`, `billing`, `admin`, `ai`, `common` — each following a hexagonal layout (`domain` / `application` / `port/in` / `port/out` / `adapter/in` / `adapter/out`) as described in `docs/hexagonal-architecture.md`. Tenant data is isolated at the Postgres level via row-level security, not just application code. Business events (inbound WhatsApp/voice messages, KB changes, leads) flow through Spring Modulith's `@ApplicationModuleListener` event bus rather than direct cross-module calls.
 
 ---
 
-## Epic 1 — Platform Foundation & Infrastructure (Complete)
+## Epic-by-Epic Status
 
-All infrastructure required by business features is in place.
-
-### Module structure
-Nine Spring Modulith modules are defined with enforced boundaries:
-`tenant`, `knowledgebase`, `whatsapp`, `voice`, `leads`, `billing`, `admin`, `ai`, `common`
-
-Module boundary tests run via `@ApplicationModuleTest` on each module.
-
-### Database — Flyway migrations V1–V13
-All 13 migrations applied in order at startup:
-
-| Migration | Table / Change |
-|-----------|---------------|
-| V1 | `tenants` |
-| V2 | `knowledge_entries` |
-| V3 | `leads` |
-| V4 | `subscriptions` |
-| V5 | `whatsapp_messages` |
-| V6 | `voice_calls` |
-| V7 | `admin_users` |
-| V8 | RLS policies (row-level security) |
-| V9 | `audit_log` |
-| V10 | Extended `tenants` for registration fields |
-| V11 | Spring Modulith event publication tables |
-| V12 | Onboarding fields + extended `knowledge_entries` |
-| V13 | WhatsApp connection fields on `tenants` |
-
-### Multi-tenancy (RLS)
-- `TenantIdentifierResolver` — resolves `tenantId` from Spring Security context
-- `TenantConnectionProvider` — executes `SET app.current_tenant = ?` per connection
-- `TenantContext` — thread-local carrier for tenant ID
-- Integration test (`TenantRlsTest`) verifies Tenant A cannot read Tenant B's rows
-
-### Redis — five concerns wired
-| Concern | Key pattern | Implementation |
-|---------|------------|---------------|
-| Response cache | `tenant:{id}:query:{hash}` | `ResponseCacheService` |
-| OTP storage (5-min TTL) | `otp:{phone}` | `RedisOtpAdapter` |
-| Rate limiting | Per-tenant buckets | `RateLimitFilter` + `TenantRateLimitService` (Bucket4j) |
-| WhatsApp outage queue | `queue:whatsapp:{tenantId}` | `WhatsAppQueueService` |
-| KB pub/sub propagation | (infrastructure ready) | `KnowledgeEntryAddedEvent` fired on KB changes |
-
-### Security — JWT RS256
-- `JwtTokenProvider` — signs (RSASSASigner) and verifies (RSASSAVerifier) tokens; claims: `tenantId`, `userId`, `role`, `tier`
-- `JwtAuthenticationFilter` — validates Bearer token on every request; populates `TenantAwareAuthentication`
-- `SecurityConfig` — whitelist: `/api/v1/tenants`, `/webhooks/**`, `/actuator/health`, `/v3/api-docs/**`, `/swagger-ui/**`
-- Tests: `JwtTokenProviderTest`, `JwtAuthenticationFilterTest`, `SecurityIntegrationTest`
-
-### Resilience
-- `LlmService` annotated with `@CircuitBreaker(name = "llmService", fallbackMethod = "generateResponseFallback")` — opens after 5 failures, half-open probe after 30s
-- `FallbackMessageProvider` — returns a graceful customer-facing message on LLM outage
-
-### AI confidence gate (cross-cutting)
-- `AiConfidenceGateAspect` (`@Aspect`) intercepts every `@AiResponse`-annotated method
-- At confidence < 0.50: replaces response with fallback, logs warning
-- At confidence 0.50–0.75: flags response for owner review (`aiResult.flagged()`)
-- At confidence ≥ 0.75: passes through unchanged
-- Writes an `AuditLogEntry` (tenant ID, event type, confidence score, SHA-256 query hash, timestamp) for every AI call
-- `AuditLogCleanupJob` — `@Scheduled(cron = "0 0 2 * * *")` deletes rows older than 90 days
-
-### API design
-- `VersionedRestController` — header-based versioning: `Accept: application/vnd.aireceptionist.v1+json`
-- `GlobalExceptionHandler` — uniform `ApiResponse{success, errorCode, message, details, timestamp}` envelope
-- Exception hierarchy: `AiReceptionistException` → `AuthorizationException`, `BusinessRuleException`, `ExternalServiceException`, `NotFoundException`, `ValidationException`
-- OpenAPI / Swagger UI available at `/swagger-ui.html`
-
-### Developer tooling
-- `AbstractIntegrationTest` — spins up PostgreSQL + Redis via Testcontainers
-- `AbstractModuleTest` — base for `@ApplicationModuleTest` boundary checks
-- `docker-compose.yml` — PostgreSQL + Redis for local development
-- `AsyncConfig`, `ClockConfig` — injectable `Clock` for testability
+| Epic | Status | Notes |
+|------|--------|-------|
+| 1 — Platform Foundation & Infrastructure | **Done** | Modules, RLS, JWT, Redis, resilience, audit, API envelope, CI all in place (CI itself currently failing — see below) |
+| 2 — Tenant Registration & Onboarding | **Done** | Registration, OTP, 5-question wizard, WhatsApp connect, OCR import all implemented and tested |
+| 3 — AI WhatsApp Customer Service & KB | **Done** | Full pipeline: language detection, LLM + KB context, confidence gate, empathy mode, lead capture, WhatsApp owner commands, self-improving KB, web KB CRUD |
+| 4 — Lead Management & Owner Visibility | **Done** | List/filter/status update, export, erase/erase-all, daily summary job (built, flagged off by default) |
+| 5 — Platform Administration & Compliance | **Done** | Dashboard, suspend/reactivate/terminate, conversation log viewer, broadcast/notify, audit log query, data export |
+| 6 — Voice Communication *(Phase 1b)* | **Partial** | Story 6.1 only (call reception + tier gating). No AI voice response, no human fallback/transfer |
+| 7 — Subscription & Billing *(Phase 1b)* | **Not started** | Only a module-boundary test stub exists. No Razorpay, no tier enforcement, no usage tracking |
+| 8 — Franchise & Multi-Location *(Phase 2)* | **Not started** | No code found anywhere in `src/` |
 
 ---
 
-## Epic 2 — Tenant Registration & Business Onboarding (Complete)
+### Epic 1 — Platform Foundation & Infrastructure (Done)
 
-A business owner can register, verify via OTP, complete the 5-question wizard, connect their WhatsApp number, and upload a price list photo. All flows are implemented and tested.
+- **Migrations:** 26 Flyway migrations now applied (V1–V26), up from 13 in the last doc — later ones are indexes, constraint fixes, and additive columns (e.g. `V21__add_leads_tenant_status_created_index.sql`, `V25__fix_whatsapp_sender_type_constraint.sql`, `V26__add_leads_phone_hash.sql`), not new tables.
+- **Multi-tenancy:** RLS + `TenantContext`/`TenantIdentifierResolver`/`TenantConnectionProvider` unchanged in approach.
+- **Module boundary testing changed:** `AbstractModuleTest` no longer uses `@ApplicationModuleTest` (a real Spring context per module) — code comments explain this broke once cross-module bean dependencies existed. It now does pure static bytecode analysis via `ApplicationModules.of(...).detectViolations()`, with one **documented, accepted exception**: a `leads` ↔ `whatsapp` cycle (a deliberate bidirectional event saga — WhatsApp captures a lead → leads reacts; leads module also notifies the owner via WhatsApp). Any other violation still fails the build.
+- **AI confidence gate, resilience, audit log, API envelope, Swagger:** all as previously documented, still in place.
+- **CI:** GitHub Actions workflow now splits ~284 tests into 8 parallel job groups (was 1 monolithic job) because Testcontainers Postgres/Redis became unreachable partway through long single-JVM runs. See Testing & CI section — this fix did not fully resolve the underlying flakiness.
 
-### Tenant lifecycle (hexagonal, Tenant module)
-```
-POST /api/v1/tenants          → TenantRegistrationService.registerTenant()
-POST /api/v1/tenants/verify-otp   → TenantRegistrationService.verifyOtp()  → returns JWT
-POST /api/v1/tenants/resend-otp   → TenantRegistrationService.requestNewOtp()
-POST /api/v1/tenants/{id}/onboarding   → TenantOnboardingService.completeOnboarding()
-POST /api/v1/tenants/{id}/whatsapp     → TenantWhatsAppConnectionService.connectWhatsApp()
-DELETE /api/v1/tenants/{id}/data       → TenantDataRightsService.eraseTenantData()
-GET    /api/v1/tenants/{id}/data/export → TenantDataRightsService.exportTenantData()
-```
+### Epic 2 — Tenant Registration & Onboarding (Done)
 
-**Domain rules enforced:**
-- `TenantRegistrationPolicy.ensureDedicatedBusinessPhone()` — rejects registration if owner phone and business phone are the same (FR2)
-- Tenant must be `ACTIVE` or `ONBOARDING_COMPLETE` to run the wizard (FR3)
-- WhatsApp connection allowed only after `ONBOARDING_COMPLETE` (FR5)
-- Duplicate `phoneNumberId` across tenants rejected (FR5)
-- Email uniqueness enforced before saving
+Unchanged in substance from the previous doc: registration + WhatsApp OTP, 5-question onboarding wizard, WhatsApp Business connect flow, OCR price-list import (Google Vision default / Tesseract fallback), DPDP export/erasure endpoints. All backed by tests (`TenantRegistrationTest`, `OtpServiceTest`, `TenantOnboardingTest`, `TenantDataExportTest`, `TenantErasureTest`, etc.).
 
-**Ports implemented (all adapters wired):**
-| Port | Adapter |
-|------|---------|
-| `OtpPort` | `RedisOtpAdapter` — generates, stores (5-min TTL), verifies, invalidates |
-| `OwnerNotificationPort` | `WhatsAppOwnerNotificationAdapter` |
-| `TokenIssuerPort` | `JwtTokenIssuerAdapter` |
-| `SubscriptionProvisioningPort` | `JdbcSubscriptionProvisioningAdapter` |
-| `TenantRegistrationRepository` | `TenantPersistenceAdapter` → `JpaTenantRepository` (JPA) |
-| `TenantDataStorePort` | `JdbcTenantDataStoreAdapter` |
-| `TenantAuditPort` | `AuditLogTenantAuditAdapter` |
+### Epic 3 — AI WhatsApp Customer Service & Knowledge Base (Done — major change since last doc)
 
-**Events:** `TenantOnboardedEvent` published after onboarding; `InboundWhatsAppMessageEvent` published by webhook (consumed by logger only — see Epic 3)
+The previous doc described this as "Not started" with `LlmService` as a stub. That is now wrong — this is fully wired:
 
-### Knowledge Base (5-question wizard + OCR)
-```
-POST /api/v1/tenants/{id}/knowledge/ocr/import   → async image extract → parseProductPrices()
-POST /api/v1/tenants/{id}/knowledge/ocr/confirm  → KnowledgeBaseService.bulkUpsertOcrProducts()
-GET  /api/v1/tenants/{id}/knowledge              → KnowledgeBaseService.findByTenantId()
-```
+- **`LlmService`** (`src/main/java/com/aireceptionist/ai/service/LlmService.java`) calls a real `AiChatPort` (implemented by `SpringAiChatAdapter`), builds prompts via `PromptAssembler` with KB context from `KnowledgeBaseService.search()` and last-5-turn conversation history from `ConversationContextService`, caches responses in Redis (`tenant:{id}:query:{hash}`), and has separate normal vs. empathy-mode response generation, both behind `@CircuitBreaker` and the `@AiResponse` confidence-gate aspect.
+- **`WhatsAppMessageService.onInboundMessage()`** is the actual end-to-end pipeline: language detection → conversation history → frustration/empathy detection (publishes `FrustrationDetectedEvent`) → LLM call → lead-capture state machine (consent message → name/phone parse → `LeadCaptureRequestedEvent`) → persists + sends the outbound WhatsApp message. It also correctly blocks message processing for `SUSPENDED` / `PAYMENT_SUSPENDED` / `TERMINATED` tenants (fixed reply) and silently drops messages for `ERASED` tenants (documented DPDP reasoning in code comments).
+- **Owner WhatsApp commands** (`OwnerCommandParser`): `ADD:`, `UPDATE:`, `DELETE:`, `ADD FAQ:` commands, with `ConflictDetectionService` checking for conflicting entries before saving.
+- **Self-improving KB:** `UnansweredQueryListener` notifies the owner on a low-confidence query and stores training context in Redis; owner's reply completes the loop (per `KnowledgeBaseWebCrudTest`/`SelfImprovingKbTest`).
+- **Web KB interface:** `KnowledgeBaseController` has full CRUD + pagination + OCR import/confirm, tenant-ownership-checked.
+- **Caveat:** several of the async, event-driven integration tests for this exact pipeline (confidence gating, frustration mode, AI pipeline end-to-end) are among the tests currently **failing in CI** — see Testing & CI. The code exists and unit-level pieces pass; the async wiring's reliability under CI's Testcontainers setup is currently in question.
 
-**OCR pipeline:**
-- `OcrIngestionService.extractFromImage()` — `@Async`, delegates to pluggable `OcrProvider`
-- Two providers: `GoogleVisionOcrProvider` (default), `TesseractOcrProvider` — switchable via `app.ocr.provider`
-- `parseProductPrices()` — regex `^(.+?)[\s\-–:]+(?:₹|Rs\.?\s*)?(\d[\d,]*(?:\.\d{1,2})?)(?:/-)?$` — handles Indian price formats
-- Throws `OcrLowConfidenceException` if fewer than 2 products parsed (triggers confirm flow)
-- KB operations: `bulkUpsertProducts` (wizard source), `bulkUpsertOcrProducts` (OCR source), `bulkUpsertFaqs` — all with upsert + dedup + orphan deletion
-- `KnowledgeEntryAddedEvent` fired after every KB write (ready to drive 60s propagation)
-- `KnowledgeEntry` domain object: typed (`PRODUCT` / `FAQ`), sourced (`WIZARD` / `OCR`), tenant-scoped
+### Epic 4 — Lead Management & Owner Visibility (Done)
 
-**Tests:** `OcrIngestionServiceTest`, `OcrImportTest`, `KnowledgeBaseServiceTest`, `KnowledgeBaseControllerTest`, `TenantRegistrationTest`, `TenantOnboardingTest`, `OnboardingStatusGuardTest`, `TenantServiceEraseTest`, `TenantRlsTest`, `OtpServiceTest`, `WhatsAppConnectionServiceTest`, `WhatsAppConnectionTest`
+- `LeadController`: list with status filter, `PATCH` status update, export, erase single lead, erase-all.
+- `DailySummaryJob`: scheduled job exists and is fully implemented, gated behind `features.daily-summary.enabled` (defaults to `false`), matching the plan's Phase-1b flag intent.
+- `LeadCaptureEventListener` ties the WhatsApp-side consent flow (Epic 3) into actual `Lead` persistence.
 
----
+### Epic 5 — Platform Administration & Compliance (Done)
 
-## Epic 3 — AI WhatsApp Customer Service & Knowledge Base (Not started)
+All six planned stories appear implemented in `AdminController` / `AdminService`:
+- Tenant dashboard list + detail (`GET /v1/admin/tenants`, `/{tenantId}`)
+- Suspend / reactivate / terminate actions
+- Conversation log viewer (read-only, audited access)
+- Admin → owner WhatsApp notify + rate-limited broadcast (capped tenant list, shared rate bucket with `/notify`)
+- Tenant data export
+- Audit log query endpoint — uses **keyset/seek pagination** (not offset) deliberately, per an in-code note referencing a 2026-09-03 review
+- `AdminAccessAuditInterceptor` / `ScheduledDataRetentionJob` for admin access logging and 90-day cleanup
 
-### What is wired (infrastructure only)
-- `WhatsAppWebhookController` — receives Meta webhooks at `POST /webhooks/whatsapp`; verifies HMAC-SHA256 signature; resolves tenant from `phoneNumberId`; fires `InboundWhatsAppMessageEvent`
-- `WhatsAppWebhookController` — `GET /webhooks/whatsapp` webhook verification (hub.challenge handshake)
-- `InboundWhatsAppMessageLogger` — `@ApplicationModuleListener` — logs inbound events, does nothing else
-- `LlmService.generateResponse()` — **stub** — throws `ExternalServiceException("LLM not yet configured")`; circuit breaker and confidence gate aspect are wired and ready
+**Known gap:** there is still no login endpoint that issues a `PLATFORM_ADMIN` JWT (`admin_users` table exists, but nothing authenticates against it). The only way to get an admin token today is the local `scripts/mint-admin-jwt.js` script, which signs one locally using the app's own RSA key. This is fine for local testing but is a real gap before this could go to production.
 
-### What is not implemented (FR8–FR21)
-- LLM integration (OpenAI GPT-4o or Claude) with knowledge base context injection
-- Language detection (LangDetect / Google Language API) for first message
-- Hinglish (mixed Hindi-English) response handling
-- WhatsApp command parsing — distinguishing owner management commands from customer messages by sender phone
-- Owner knowledge base commands: add / update / delete entries via WhatsApp
-- Conflict detection in KB (FR10)
-- Unanswered query flagging to owner WhatsApp (FR11)
-- Owner WhatsApp reply → permanent KB addition (FR12)
-- 60-second KB propagation to live AI (FR13) — event infrastructure exists; consumer not written
-- AI response pipeline: query → KB lookup → LLM → confidence gate → WhatsApp reply
-- Frustration/empathy mode detection (FR20: "cheated", "refund", "fraud", ALL CAPS, etc.)
-- Lead intent capture from WhatsApp messages (FR21)
-- Response caching integration (cache infrastructure exists, not called from AI pipeline)
-- WhatsApp outage queue drainer `@Scheduled` processor
+### Epic 6 — Voice Communication *(Phase 1b)* — Partial
 
-### Next story to implement
-**Story 3.1** — wire `InboundWhatsAppMessageEvent` into an `AiWhatsAppResponseService` that: (1) looks up tenant KB, (2) calls `LlmService.generateResponse()` with KB context, (3) sends WhatsApp reply via outbound port. The confidence gate aspect and circuit breaker activate automatically.
+- **Done (Story 6.1):** `VoiceWebhookController` receives Exotel call webhooks, verifies an HMAC-SHA1 signature over the form fields, resolves the tenant by business phone number, and redirects `BASIC`-tier callers to WhatsApp per plan. `ExotelCallService` persists a `VoiceCall` row via an `@ApplicationModuleListener`. Voice deliberately shares no service/repository/queue with `whatsapp` (independent-failure requirement satisfied by construction).
+- **Not done (Stories 6.2–6.4):** No actual AI voice response — no STT, no TTS, no `LlmService` call from the voice path. The `/webhooks/voice/transcript` action is referenced in the ExoML response XML but has no corresponding controller endpoint. No human-fallback alert or live call transfer. A code comment in `ExotelCallService` explicitly flags this as a placeholder: "The AI voice pipeline itself is wired in Story 6.2" — i.e. that story has not happened yet.
+
+### Epic 7 — Subscription & Billing Automation *(Phase 1b)* — Not started
+
+`BillingModule` exists only as a module-boundary test (`BillingModuleTest`) with no production code behind it. No Razorpay integration, no `@TierRequired`-style enforcement annotation, no usage/limit tracking, no suspension-on-non-payment flow. The only billing-adjacent code is on the **tenant** side: `SubscriptionProvisioningPort` / `JdbcSubscriptionProvisioningAdapter`, which just provisions a default `BASIC` subscription row at registration time — this is tenant-onboarding plumbing, not the billing epic.
+
+### Epic 8 — Franchise & Multi-Location *(Phase 2)* — Not started
+
+No franchise-related code anywhere in `src/`. Consistent with this being explicitly Phase 2 in the plan.
 
 ---
 
-## Epic 4 — Lead Management (Not started)
+## Known Gaps / Not-Yet-Started Work
 
-- `LeadsModule.java` — module marker only, no code
-- Database table (`leads`) with consent fields exists from V3 migration
-- FR28–FR31 not implemented: no lead entity, no repository, no service, no controller, no morning summary
+- **Epic 7 (Billing)** and **Epic 8 (Franchise)** — nothing built.
+- **Voice AI response, human fallback, live transfer** (Epic 6, stories 6.2–6.4).
+- **No admin login/auth flow** — `PLATFORM_ADMIN` JWTs can currently only be minted by a local script, not issued by the running application.
+- **A stale `backend/` directory** at the repo root (`/backend/src/main/java/com/aireceptionist/...`) is a leftover from the very first scaffold commits (April 2026, before the Spring Modulith rewrite to `/src`). It is not referenced by `pom.xml` or `.gitignore` and appears to be dead code sitting in the repo — worth deleting or explicitly archiving so it doesn't confuse future readers.
+- **CI reliability** — see below; several async integration tests are currently failing on `main`.
 
----
+## In-Progress / Uncommitted Work
 
-## Epic 5 — Platform Administration & Compliance (Partial)
+Two local changes are not yet committed:
 
-### Done
-- Audit log infrastructure: `AuditLogEntry`, `AuditLogRepository`, `AuditLogWriter`, `AuditLogCleanupJob` (90-day retention)
-- DPDP data rights: `TenantDataRightsService.eraseTenantData()` and `exportTenantData()` (FR43, FR44)
-- Audit trail on all AI responses via `AiConfidenceGateAspect` (FR45)
-- `admin_users` table exists (V7 migration)
+- **`scripts/mint-admin-jwt.js` (modified, not committed):** now mints a fixed "super admin" identity (`00000000-0000-0000-0000-000000000001`) with a 30-day expiry instead of a fresh random identity with a 2-hour expiry each run — makes local admin testing (and its audit-log trail) consistent across sessions. Includes a usage example in its own output.
+- **`scripts/whatsapp-simulator.js` (new, untracked):** a local dev tool that serves a one-page setup-wizard + chat UI on `localhost:4000`, proxies onboarding calls to the real backend, and builds correctly HMAC-signed Meta-style webhook payloads to exercise `/webhooks/whatsapp` end to end — plus stands in for the WhatsApp Graph API so outbound AI replies can be seen in a browser without a real Meta sandbox. This looks like genuinely useful tooling for manually verifying the Epic 3 pipeline; it should probably be committed once it's confirmed working.
 
-### Not implemented
-- `AdminModule.java` — module marker only, no code
-- No admin controllers (FR37–FR40): no tenant list, no conversation log viewer, no suspend/reactivate, no admin-to-owner WhatsApp notification
-- No tenant data isolation enforcement admin view (FR41 — exists at DB layer via RLS)
-- No admin access audit trail (NFR13 — RLS and audit log ready, admin access logging not wired)
-- No GDPR/DPDP consent capture at lead creation (FR42 — `leads` schema has `consent_timestamp` column, but lead entity doesn't exist yet)
+Neither file touches production code — both are developer tooling under `scripts/`.
 
 ---
 
-## Epics 6, 7, 8 — Not started
+## Testing & CI Status
 
-- **Epic 6 (Voice):** `VoiceModule.java` is a stub. No Exotel integration, no voice call handling.
-- **Epic 7 (Billing):** `BillingModule.java` is a stub. No Razorpay integration, no tier enforcement, no suspension flow.
-- **Epic 8 (Franchise):** Not started; no design work begun.
-
----
-
-## Database State
-
-13 Flyway migrations are applied. All tables for planned features exist:
-`tenants`, `knowledge_entries`, `leads`, `subscriptions`, `whatsapp_messages`, `voice_calls`, `admin_users`, `audit_log` + RLS policies + Modulith event tables.
-
-The schema is ahead of the application code — tables for Epic 3 (whatsapp_messages), Epic 4 (leads), Epic 5 (admin_users), Epic 6 (voice_calls), and Epic 7 (subscriptions) exist but the application code for those features is not written yet.
+- **78 test files** under `src/test/java`, spread across every module (roughly: tenant 11, whatsapp 11, leads 12, knowledgebase 9, ai 9, admin 8, security 3, voice 3, common 3, api/audit/billing/ratelimit/resilience 1–2 each, plus 3 root-level: `AbstractIntegrationTest`, `AbstractModuleTest`, `ApplicationContextLoadsTest`).
+- **CI workflow** (`.github/workflows/ci.yml`) splits tests into 8 groups (`admin-core`, `admin-audit`, `admin-conversation`, `ai`, `knowledgebase`, `leads`, `tenant`, `whatsapp-voice`), each its own job/runner, after a monolithic single-job run started hitting Testcontainers connection failures under load (documented in the workflow's own comments, dated 2026-09-03).
+- **CI is currently failing on `main`.** Checked via `gh run list` / `gh run view`: the last 5 runs on `main` (including both "Existing issues fix" commits) all show **failure**, with only the `admin-audit` group passing on the most recent run. The actual test-log errors point to a **Redis Testcontainers connectivity problem** (`io.lettuce.core.RedisConnectionException: Connection closed prematurely`), which cascades into `org.awaitility.core.ConditionTimeoutException` in async, event-driven integration tests — specifically `ConfidenceGatingIntegrationTest`, `FrustrationModeIntegrationTest`, and `AiPipelineTest` (all Epic 3 pipeline tests that wait on an `@ApplicationModuleListener` to finish). Plain unit tests in the same groups pass fine.
+- **Net read:** the underlying Epic 3/5/6 features are real and reasonably well covered by tests, but the test suite's reliability in CI has regressed since the 2026-09-03 test-splitting fix — splitting into groups fixed the original monolithic-run timeout but exposed (or didn't fix) a second, Redis-specific flake. This should not be read as "the features are broken"; it should be read as "CI can't currently be trusted to confirm that."
 
 ---
 
-## Key Files Reference
+## Suggested Next Steps
 
-| Area | File |
-|------|------|
-| Entry point | `AiReceptionistApplication.java` |
-| Security config | `config/SecurityConfig.java` |
-| JWT | `common/security/JwtTokenProvider.java`, `JwtAuthenticationFilter.java` |
-| AI confidence gate | `common/ai/AiConfidenceGateAspect.java` |
-| LLM (stub) | `common/ai/LlmService.java` |
-| Tenant registration | `tenant/application/TenantRegistrationService.java` |
-| Tenant onboarding | `tenant/application/TenantOnboardingService.java` |
-| WhatsApp connection | `tenant/application/TenantWhatsAppConnectionService.java` |
-| Data rights (DPDP) | `tenant/application/TenantDataRightsService.java` |
-| WhatsApp webhook | `whatsapp/adapter/in/web/WhatsAppWebhookController.java` |
-| WhatsApp message logger | `whatsapp/application/InboundWhatsAppMessageLogger.java` |
-| OCR pipeline | `knowledgebase/service/OcrIngestionService.java` |
-| Knowledge base service | `knowledgebase/service/KnowledgeBaseService.java` |
-| Audit log cleanup | `common/audit/AuditLogCleanupJob.java` |
-| Rate limiting | `common/ratelimit/RateLimitFilter.java`, `TenantRateLimitService.java` |
-| Response cache | `common/cache/ResponseCacheService.java` |
-| WhatsApp queue | `common/queue/WhatsAppQueueService.java` |
-| Architecture rules | `docs/hexagonal-architecture.md` |
+1. **Fix the Redis Testcontainers flake in CI** — this is blocking any real confidence in commits since 2026-09-03; look at container lifecycle/readiness handling in the async integration test base rather than the awaitility timeouts themselves (those are a symptom).
+2. **Decide the fate of `/backend`** — delete it or document why it's kept; as-is it's confusing dead code next to the real `/src` tree.
+3. **Commit or discard** `scripts/mint-admin-jwt.js` and `scripts/whatsapp-simulator.js` — both look like keepers.
+4. **Build a real admin login flow** against `admin_users` before relying on the JWT-minting script for anything beyond local dev.
+5. **Pick up Epic 6** (Stories 6.2–6.4: AI voice response, human fallback, live transfer) if voice is still in scope for the next milestone — Story 6.1's plumbing (tenant resolution, tier gating, call persistence) is ready to build on.
+6. **Epic 7 (Billing)** is the largest remaining greenfield epic — nothing exists yet beyond the module skeleton; scope it as its own block of work when ready.

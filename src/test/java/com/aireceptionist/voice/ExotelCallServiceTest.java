@@ -8,7 +8,6 @@ import com.aireceptionist.voice.event.VoiceCallReceivedEvent;
 import com.aireceptionist.voice.repository.VoiceCallRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Optional;
@@ -27,7 +26,6 @@ import static org.awaitility.Awaitility.await;
  */
 class ExotelCallServiceTest extends AbstractIntegrationTest {
 
-    @Autowired ApplicationEventPublisher eventPublisher;
     @Autowired VoiceCallRepository voiceCallRepository;
     @Autowired JdbcTemplate jdbcTemplate;
 
@@ -44,7 +42,7 @@ class ExotelCallServiceTest extends AbstractIntegrationTest {
         UUID tenantId = seedTenant();
         String callSid = "CA-" + UUID.randomUUID();
 
-        eventPublisher.publishEvent(new VoiceCallReceivedEvent(
+        publishAndCommit(new VoiceCallReceivedEvent(
                 tenantId.toString(), callSid, "+919876543210", "+911234567890"));
 
         // voice_calls carries RLS (V8/W99): the listener correctly sets TenantContext around its
