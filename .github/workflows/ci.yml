@@ -64,6 +64,10 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    # Push to GHCR with the built-in GITHUB_TOKEN (no REGISTRY_TOKEN secret to manage).
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout
@@ -87,6 +91,9 @@ jobs:
       - name: Push to registry
         if: github.ref == 'refs/heads/main' && success()
         run: |
-          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker tag ai-receptionist:${{ github.sha }} ghcr.io/${{ github.repository_owner }}/ai-receptionist:${{ github.sha }}
-          docker push ghcr.io/${{ github.repository_owner }}/ai-receptionist:${{ github.sha }}
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          docker tag ai-receptionist:${{ github.sha }} ghcr.io/$OWNER/ai-receptionist:${{ github.sha }}
+          docker tag ai-receptionist:${{ github.sha }} ghcr.io/$OWNER/ai-receptionist:latest
+          docker push ghcr.io/$OWNER/ai-receptionist:${{ github.sha }}
+          docker push ghcr.io/$OWNER/ai-receptionist:latest
