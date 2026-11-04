@@ -36,23 +36,52 @@ logging:
     root: WARN
     com.aireceptionist: INFO
 
+# ---------------------------------------------------------------------------------------------
+# Production secrets (MVP readiness review): core integrations have NO fallback — a missing
+# variable stops startup instead of silently running with the public test defaults from
+# application.yml (a default WhatsApp app secret would let anyone forge webhooks, including the
+# owner's KB-editing commands). Optional integrations default to BLANK, which turns them off
+# safely: a blank webhook secret rejects every webhook for that integration.
+# ---------------------------------------------------------------------------------------------
+spring:
+  ai:
+    openai:
+      api-key: ${SPRING_AI_OPENAI_API_KEY}
+
 app:
+  otp:
+    secret: ${OTP_SECRET}
+    whatsapp-template: ${OTP_WHATSAPP_TEMPLATE}
+    log-code: false
+  whatsapp:
+    verify-token: ${WHATSAPP_VERIFY_TOKEN}
+    app-secret: ${WHATSAPP_APP_SECRET}
+    access-token: ${WHATSAPP_ACCESS_TOKEN}
+    platform-phone-number-id: ${WHATSAPP_PLATFORM_PHONE_NUMBER_ID}
+  export:
+    message-hash-secret: ${EXPORT_HASH_SECRET}
+  # Voice (Epic 6) — optional. Blank EXOTEL_SHARED_SECRET = every Exotel webhook is rejected.
+  # Exotel's built-in <Say> by default; set VOICE_TTS_PROVIDER=google (+ a public https
+  # VOICE_PUBLIC_BASE_URL and Google credentials) for Google TTS.
+  exotel:
+    api-key: ${EXOTEL_API_KEY:}
+    api-token: ${EXOTEL_API_TOKEN:}
+    shared-secret: ${EXOTEL_SHARED_SECRET:}
+    sid: ${EXOTEL_SID:}
   voice:
     tts:
-      # Story 6.2: Google Cloud TTS in prod (needs GOOGLE_APPLICATION_CREDENTIALS + VOICE_PUBLIC_BASE_URL)
-      provider: ${VOICE_TTS_PROVIDER:google}
-    # No default: the app refuses to start without a public URL for Exotel callbacks/audio.
-    public-base-url: ${VOICE_PUBLIC_BASE_URL}
-  # Epic 7 code review: no fallbacks in prod — a missing secret must stop startup, not silently
-  # accept webhooks signed with the public test default.
+      provider: ${VOICE_TTS_PROVIDER:say}
+    public-base-url: ${VOICE_PUBLIC_BASE_URL:}
+  # Billing (Epic 7) — optional. Blank RAZORPAY_WEBHOOK_SECRET = every billing webhook is
+  # rejected; blank plan ids = checkout answers INVALID_PLAN. Put pilot tenants on PRO manually.
   razorpay:
-    key-id: ${RAZORPAY_KEY_ID}
-    key-secret: ${RAZORPAY_KEY_SECRET}
-    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+    key-id: ${RAZORPAY_KEY_ID:}
+    key-secret: ${RAZORPAY_KEY_SECRET:}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
     plans:
-      basic: ${RAZORPAY_PLAN_BASIC}
-      pro: ${RAZORPAY_PLAN_PRO}
+      basic: ${RAZORPAY_PLAN_BASIC:}
+      pro: ${RAZORPAY_PLAN_PRO:}
   ocr:
-    provider: google
+    provider: ${OCR_PROVIDER:google}
 
 # features.daily-summary.enabled stays false (base default) until Phase 1b actually begins — see AC5 of story 4.2.

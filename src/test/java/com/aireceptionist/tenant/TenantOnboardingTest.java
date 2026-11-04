@@ -81,8 +81,8 @@ class TenantOnboardingTest extends AbstractIntegrationTest {
 
     private RegisteredTenant registerAndVerifyTenant() throws Exception {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        String ownerPhone = "+9191" + suffix;
-        String businessPhone = "+9192" + suffix;
+        String ownerPhone = "+9191" + digitsOf(suffix);
+        String businessPhone = "+9192" + digitsOf(suffix);
         String email = "owner-" + suffix + "@example.com";
 
         mockMvc.perform(post("/v1/tenants/register")
@@ -127,7 +127,7 @@ class TenantOnboardingTest extends AbstractIntegrationTest {
     }
 
     private int countKnowledgeEntries(UUID tenantId) {
-        return withTenant(tenantId, "SELECT COUNT(*) FROM knowledge_entries", Integer.class);
+        return withTenant(tenantId, "SELECT COUNT(*) FROM knowledge_entries", Long.class).intValue();
     }
 
     private String readProductPrice(UUID tenantId, String productName) {

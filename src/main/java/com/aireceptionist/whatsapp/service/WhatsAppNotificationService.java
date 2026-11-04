@@ -50,7 +50,7 @@ public class WhatsAppNotificationService {
     @CircuitBreaker(name = "whatsAppNotificationService", fallbackMethod = "sendMessageFallback")
     public void sendMessage(String tenantId, String recipientPhone, String message) {
         String phoneNumberId = phoneNumberIdResolver.findPhoneNumberId(UUID.fromString(tenantId))
-                .orElseThrow(() -> new ExternalServiceException("No phoneNumberId found for tenant " + tenantId));
+                .orElseThrow(() -> notConnected(tenantId));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -72,6 +72,17 @@ public class WhatsAppNotificationService {
         log.debug("WhatsApp message sent to {} (tenant={})", recipientPhone, tenantId);
     }
 
+    /**
+     * A tenant without a connected WhatsApp number is a configuration state, not a Meta outage —
+     * it's a BusinessRuleException, which the {@code whatsAppNotificationService} circuit breaker
+     * ignores (application.yml). Counting it as a failure let a handful of unconnected tenants
+     * (e.g. in the daily-summary loop) trip the breaker and silence every owner's notifications.
+     */
+    private static com.aireceptionist.common.exception.BusinessRuleException notConnected(String tenantId) {
+        return new com.aireceptionist.common.exception.BusinessRuleException("WHATSAPP_NOT_CONNECTED",
+                "No WhatsApp phone number is connected for tenant " + tenantId);
+    }
+
     void sendMessageFallback(String tenantId, String recipientPhone, String message, Throwable cause) {
         log.warn("WhatsApp API unavailable for tenant {}, message queued for retry", tenantId, cause);
         queueService.enqueueMessage(tenantId, recipientPhone, message);
@@ -87,7 +98,7 @@ public class WhatsAppNotificationService {
     public void sendTemplateMessage(String tenantId, String recipientPhone, String templateName,
                                      String languageCode, List<String> bodyParams) {
         String phoneNumberId = phoneNumberIdResolver.findPhoneNumberId(UUID.fromString(tenantId))
-                .orElseThrow(() -> new ExternalServiceException("No phoneNumberId found for tenant " + tenantId));
+                .orElseThrow(() -> notConnected(tenantId));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);

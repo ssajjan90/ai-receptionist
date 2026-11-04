@@ -139,6 +139,33 @@ public class GlobalExceptionHandler {
         return ApiResponse.error("SERVICE_UNAVAILABLE", "Service temporarily unavailable, please retry shortly", null);
     }
 
+    // MVP readiness: ordinary client mistakes used to fall into the catch-all below as 500 +
+    // ERROR log (an unknown public URL hit by a scanner, a bad UUID, a missing param — W34, W63,
+    // W78, W90, W118, and the 415 noted in story 6.1). They're 4xx, logged at debug at most.
+
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleNoResource(org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        return ApiResponse.error("NOT_FOUND", "Resource not found", null);
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+    public ApiResponse<Void> handleMediaType(org.springframework.web.HttpMediaTypeNotSupportedException ex) {
+        return ApiResponse.error("UNSUPPORTED_MEDIA_TYPE", ex.getMessage(), null);
+    }
+
+    @ExceptionHandler({
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingRequestHeaderException.class
+    })
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleBadRequest(Exception ex) {
+        log.debug("Bad request: {}", ex.getMessage());
+        return ApiResponse.error("VALIDATION_ERROR", "Invalid request", null);
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleUnexpected(Exception ex) {

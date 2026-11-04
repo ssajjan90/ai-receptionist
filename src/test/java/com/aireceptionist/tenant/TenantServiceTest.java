@@ -38,6 +38,14 @@ class TenantServiceTest {
                     new BCryptPasswordEncoder()
             );
 
+    // W91: registerTenant flushes via the container-injected @PersistenceContext EntityManager,
+    // which a plain unit test never receives.
+    @org.junit.jupiter.api.BeforeEach
+    void injectEntityManager() {
+        org.springframework.test.util.ReflectionTestUtils.setField(tenantService, "entityManager",
+                mock(jakarta.persistence.EntityManager.class));
+    }
+
     @Test
     void registerTenantRejectsSameOwnerAndBusinessPhone() {
         CreateTenantRequest request = validRequest("+919876543210", "+919876543210", "owner@example.com");

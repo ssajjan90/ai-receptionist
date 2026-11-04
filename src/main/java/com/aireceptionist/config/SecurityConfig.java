@@ -32,6 +32,11 @@ public class SecurityConfig {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // No/invalid JWT → 401 (clients should re-authenticate); 403 stays for authenticated
+            // callers lacking access. Without an entry point Spring Security answered 403 for both.
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                    new org.springframework.security.web.authentication.HttpStatusEntryPoint(
+                            org.springframework.http.HttpStatus.UNAUTHORIZED)))
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/v1/tenants/register", "/v1/tenants/verify-otp",
                             "/v1/tenants/resend-otp", "/webhooks/**", "/actuator/health", "/actuator/info",

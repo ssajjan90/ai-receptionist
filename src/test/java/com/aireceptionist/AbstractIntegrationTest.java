@@ -29,6 +29,11 @@ import java.util.concurrent.ConcurrentHashMap;
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest
 @ActiveProfiles("test")
+// W110: a nested @TestConfiguration of an abstract base class isn't auto-detected for
+// subclasses (Spring logs it as "detected but ignored"), so CapturingOwnerNotificationPort was
+// missing in every test that autowires it. Importing it explicitly here applies it to every
+// subclass identically (same context key → no extra cached contexts).
+@org.springframework.context.annotation.Import(AbstractIntegrationTest.TestNotificationConfig.class)
 public abstract class AbstractIntegrationTest {
 
     // Deliberately NOT @Container: that annotation hands lifecycle to the JUnit5 Testcontainers
@@ -118,6 +123,18 @@ public abstract class AbstractIntegrationTest {
     @Autowired private org.springframework.jdbc.core.JdbcTemplate integrationJdbcTemplate;
 
     private static final java.util.concurrent.atomic.AtomicLong PHONE_SEQ = new java.util.concurrent.atomic.AtomicLong(System.nanoTime() % 1_000_000L);
+
+    /** Maps a random hex suffix to 8 digits — phone numbers must match ^\\+[1-9]\\d{6,14}$. */
+    protected static String digitsOf(String hex) {
+        StringBuilder out = new StringBuilder();
+        for (char c : hex.toCharArray()) {
+            out.append(Character.isDigit(c) ? c : (char) ('0' + (c - 'a') % 10));
+            if (out.length() == 8) {
+                break;
+            }
+        }
+        return out.toString();
+    }
 
     /**
      * Runs a verification read on the test thread scoped to {@code tenantId}: the RLS-protected

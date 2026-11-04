@@ -187,7 +187,6 @@ class LeadServiceTest {
         Lead lead = Lead.create(tenantId, "Ravi Kumar", "+919876543210",
                 "Samsung Galaxy S24", LeadChannel.WHATSAPP, "WHATSAPP", Instant.now());
         when(leadRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
-        when(leadRepository.save(any(Lead.class))).thenAnswer(inv -> inv.getArgument(0));
 
         leadService.eraseLead(tenantId, lead.getId());
 

@@ -83,8 +83,9 @@ class AiPipelineTest extends AbstractIntegrationTest {
                             && m.getDirection() == MessageDirection.OUTBOUND)
                     .toList();
             assertThat(outboundMsgs).hasSize(2);
-            assertThat(outboundMsgs.get(0).getContent())
-                    .isEqualTo(outboundMsgs.get(1).getContent());
+            // Both answers come from the same (cached) AI response; the first one additionally
+            // carries story 3.5's lead-consent prompt (purchase intent), the follow-up doesn't.
+            assertThat(outboundMsgs).allSatisfy(m -> assertThat(m.getContent()).startsWith("Test response from AI"));
         });
     }
 }

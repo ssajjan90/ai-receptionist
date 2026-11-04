@@ -35,8 +35,8 @@ class TenantRegistrationTest extends AbstractIntegrationTest {
     @Test
     void registerAndVerifyOtpCreatesActiveTenantJwtAndSubscription() throws Exception {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        String ownerPhone = "+9191" + suffix.substring(0, 8);
-        String businessPhone = "+9192" + suffix.substring(0, 8);
+        String ownerPhone = "+9191" + digitsOf(suffix);
+        String businessPhone = "+9192" + digitsOf(suffix);
         String email = "owner-" + suffix + "@example.com";
 
         mockMvc.perform(post("/v1/tenants/register")

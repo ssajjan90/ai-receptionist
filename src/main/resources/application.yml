@@ -54,11 +54,20 @@ app:
     secret: ${OTP_SECRET:change-me-in-production}
     max-verify-attempts: ${OTP_MAX_VERIFY_ATTEMPTS:5}
     resend-cooldown-seconds: ${OTP_RESEND_COOLDOWN_SECONDS:60}
+    # Owner OTPs go out as a Meta-approved WhatsApp *authentication* template from the platform's
+    # own number (app.whatsapp.platform-phone-number-id). Codes are never logged except when
+    # log-code is true (local profile only).
+    whatsapp-template: ${OTP_WHATSAPP_TEMPLATE:otp_login}
+    whatsapp-template-language: ${OTP_WHATSAPP_TEMPLATE_LANGUAGE:en}
+    log-code: false
   whatsapp:
     verify-token: ${WHATSAPP_VERIFY_TOKEN:test-verify-token}
     app-secret: ${WHATSAPP_APP_SECRET:test-app-secret}
     api-url: ${WHATSAPP_API_URL:https://graph.facebook.com/v19.0}
     access-token: ${WHATSAPP_ACCESS_TOKEN:test-access-token}
+    # CallSahayak's own WhatsApp number (Meta phone_number_id) — sends owner OTPs before a tenant
+    # has connected its own number. Blank = OTP delivery off (dev/tests).
+    platform-phone-number-id: ${WHATSAPP_PLATFORM_PHONE_NUMBER_ID:}
   exotel:
     api-key: ${EXOTEL_API_KEY:test-exotel-api-key}
     api-token: ${EXOTEL_API_TOKEN:test-exotel-api-token}
@@ -144,6 +153,9 @@ resilience4j:
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 1
         sliding-window-type: COUNT_BASED
+        # A tenant with no connected number is a config state, not a Meta outage — don't trip.
+        ignore-exceptions:
+          - com.aireceptionist.common.exception.BusinessRuleException
       ttsService:
         sliding-window-size: 5
         failure-rate-threshold: 100

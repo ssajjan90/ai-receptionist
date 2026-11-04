@@ -156,7 +156,7 @@ class AuditLogApiTest extends AbstractIntegrationTest {
         // as AccessDeniedException — same shape as ownerRoleCannotCallAuditLogEndpoint below and
         // AdminControllerTest's ownerRoleIsForbiddenFromAdminEndpoints.
         mockMvc.perform(get("/v1/admin/audit-log").param("tenantId", tenantId.toString()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

@@ -23,6 +23,9 @@ logging:
     com.aireceptionist: DEBUG
 
 app:
+  otp:
+    # Local dev only: print OTP codes to the console (they're never logged in other profiles).
+    log-code: true
   voice:
     tts:
       # Story 6.2: Exotel built-in <Say> TTS locally — no Google credentials needed

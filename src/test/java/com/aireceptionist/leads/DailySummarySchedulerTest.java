@@ -46,6 +46,7 @@ class DailySummarySchedulerTest extends AbstractIntegrationTest {
     @Autowired WhatsAppMessageRepository whatsAppMessageRepository;
     @Autowired LeadRepository leadRepository;
     @Autowired AuditLogRepository auditLogRepository;
+    @Autowired io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry circuitBreakerRegistry;
     @Autowired RestTemplate restTemplate;
 
     @Value("${app.whatsapp.api-url}")
@@ -94,6 +95,10 @@ class DailySummarySchedulerTest extends AbstractIntegrationTest {
         auditLogRepository.save(new AuditLogEntry(UUID.randomUUID(), activeTenantId,
                 AuditEventType.AUDIT_LOW_CONFIDENCE, BigDecimal.valueOf(0.20), "hash-" + activeSuffix, recently));
 
+        // Other tests sharing this Spring context make failing WhatsApp sends (test tenants have no
+        // phone number id), which can leave the shared breaker OPEN — then the summary send is
+        // short-circuited to its fallback and no HTTP request is ever made. Start closed.
+        circuitBreakerRegistry.circuitBreaker("whatsAppNotificationService").reset();
         MockRestServiceServer mockServer = MockRestServiceServer.bindTo(restTemplate).build();
         mockServer.expect(requestTo(whatsAppApiUrl + "/phone-number-id-" + activeSuffix + "/messages"))
                 .andExpect(method(POST))
